@@ -67,7 +67,7 @@ void MainWindow::on_pushButtonWriteAddFile_clicked()
     w->resizeColumnsToContents();
     TapeCatalog catalog(ioTape->mediaInfo.BlockSize, filesToWrite);
     catalog.serialize();
-    ui->labelWriteTotal->setText(QString::number(catalog.totalSize / 1024) + " kb");
+    ui->labelWriteTotal->setText(psize(catalog.totalSize));
 }
 
 static void _add0(QTableWidget * w, QString dir, QList<QFileInfo> * filesToWrite) {
@@ -98,7 +98,7 @@ void MainWindow::on_pushButtonWriteAddDir_clicked()
     w->resizeColumnsToContents();
     TapeCatalog catalog(ioTape->mediaInfo.BlockSize, filesToWrite);
     catalog.serialize();
-    ui->labelWriteTotal->setText(QString::number(catalog.totalSize / 1024) + " kb");
+    ui->labelWriteTotal->setText(psize(catalog.totalSize));
 }
 
 void MainWindow::on_pushButtonWriteClear_clicked()
@@ -116,7 +116,7 @@ void MainWindow::on_pushButtonWriteWrite_clicked()
     TapeCatalog catalog(ioTape->mediaInfo.BlockSize, filesToWrite);
     QByteArray catalogImg = catalog.serialize();
     if(ioTape->mediaInfo.Capacity.QuadPart - ioTape->mediaPositionBytes < catalog.totalSize) {
-        QMessageBox::critical(this, "Catalog too large", QString::number((catalog.totalSize - (ioTape->mediaInfo.Capacity.QuadPart - ioTape->mediaPositionBytes)) / 1024) + "kb over");
+        QMessageBox::critical(this, "Catalog too large", psize(catalog.totalSize - (ioTape->mediaInfo.Capacity.QuadPart - ioTape->mediaPositionBytes)) + " over");
         return;
     }
 
@@ -154,8 +154,9 @@ void MainWindow::on_pushButtonOpen_clicked()
 
     if(ioTape->isOpened()) {
         ui->pushButtonOpen->setText("Close");
-        ui->labelBlock->setText(QString::number(ioTape->mediaInfo.BlockSize));
+        ui->labelBlock->setText(psize(ioTape->mediaInfo.BlockSize));
         change_pos();
+        ui->labelFree->setText(psize(ioTape->mediaInfo.Remaining.QuadPart) + " (" + QString::number(ioTape->mediaInfo.Remaining.QuadPart * 100 / ioTape->mediaInfo.Capacity.QuadPart) + "%)");
     } else {
         ui->pushButtonOpen->setText("Open");
     }
@@ -183,7 +184,6 @@ void MainWindow::on_pushButtonRead_clicked()
     ioDisk->Read(fn, toRead);
 }
 
-
 void MainWindow::on_pushButtonScan_clicked()
 {
     ioTape->Command(IOTape::CMD_SCAN, 0);
@@ -202,7 +202,9 @@ void MainWindow::catalog_readed(TapeCatalog * catalog) {
         total += catalog->filesOnTape.value(i).fileSize;
     }
     w->resizeColumnsToContents();
-    ui->labelReadTotal->setText(QString::number(total / 1024) + " kb");
+    ui->labelReadTotal->setText(psize(total));
+    ui->pushButtonExport->setEnabled(true);
+    ui->pushButtonRestoreAll->setEnabled(true);
 }
 
 void MainWindow::change_pos(void) {
@@ -236,5 +238,44 @@ void MainWindow::log(int level, QString message) {
 }
 
 void MainWindow::change_cache(uint64_t size) {
-    ui->labelCache->setText(QString::number(size / 1024 / 1024) + " Mb");
+    ui->labelCache->setText(psize(size));
+}
+
+void MainWindow::on_pushButtonSeekFirstFree_clicked()
+{
+    if(ioTape->mediaInfo.BlockSize > 0) {
+        ioTape->Command(IOTape::CMD_SEEK, (ioTape->mediaInfo.Capacity.QuadPart - ioTape->mediaInfo.Remaining.QuadPart) / ioTape->mediaInfo.BlockSize);
+    }
+}
+
+void MainWindow::on_pushButtonNext_clicked()
+{
+    if(ioTape->tapeCatalog == nullptr || ioTape->tapeCatalog->filesOnTape.isEmpty() || ioTape->mediaInfo.BlockSize == 0)
+        return;
+    ioTape->Command(IOTape::CMD_SEEK, (ioTape->tapeCatalog->offsetOnTape + ioTape->tapeCatalog->totalSize) / ioTape->mediaInfo.BlockSize);
+}
+
+void MainWindow::on_pushButtonExport_clicked()
+{
+    if(ioTape->tapeCatalog == nullptr || ioTape->tapeCatalog->filesOnTape.isEmpty())
+        return;
+    QString csv = QFileDialog::getSaveFileName(this, "Save catalog");
+    if(csv.isEmpty())
+        return;
+    QFile f = QFile(csv);
+    if(!f.open(QFile::WriteOnly)) {
+        QMessageBox::critical(this, "Open file error", "Error open file for writing");
+        return;
+    }
+
+    f.write(("offsetOnTape," + QString::number(ioTape->tapeCatalog->offsetOnTape)).toLatin1().append('\n'));
+    f.write(("totalSize," + QString::number(ioTape->tapeCatalog->totalSize)).toLatin1().append('\n'));
+    f.write(("files," + QString::number(ioTape->tapeCatalog->filesOnTape.length())).toLatin1().append('\n'));
+    f.write(QString("Name,Size,Offset,").toLatin1().append('\n'));
+
+    for(int i = 0; i < ioTape->tapeCatalog->filesOnTape.length(); i++) {
+        auto res = ioTape->tapeCatalog->filesOnTape.value(i);
+        f.write((res.fileNamePath.toLatin1() + QString(",") + QString::number(res.fileSize) + QString(",") + QString::number(res.offset)).toUtf8().append('\n'));
+    }
+    f.close();
 }

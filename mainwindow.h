@@ -50,11 +50,28 @@ private slots:
 
     void on_pushButtonRestoreAll_clicked();
 
+    void on_pushButtonSeekFirstFree_clicked();
+
+    void on_pushButtonNext_clicked();
+
+    void on_pushButtonExport_clicked();
+
 private:
     Ui::MainWindow *ui;
 
     IOTape * ioTape = nullptr;
     IODisk * ioDisk = nullptr;
     QList<QFileInfo> filesToWrite;
+
+    QString psize(uint64_t size) {
+        if(size > 3ULL * 1024 * 1024 * 1024)
+            return QString::number(size / (1024 * 1024 * 1024)) + " Gb";
+        else if(size > 3 * 1024 * 1024)
+            return QString::number(size / (1024 * 1024)) + " Mb";
+        else if(size > 3 * 1024)
+            return QString::number(size / 1024) + " kb";
+        else
+            return QString::number(size);
+    }
 };
 #endif // MAINWINDOW_H
