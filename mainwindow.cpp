@@ -2,6 +2,7 @@
 #include <QFileDialog>
 #include <QDirIterator>
 #include <QMessageBox>
+#include <QElapsedTimer>
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "tapecatalog.h"
@@ -40,6 +41,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ioDisk, &IODisk::log, this, &MainWindow::log);
     ioTape->start();
     ioDisk->start();
+
+    ui_refresh();
 }
 
 MainWindow::~MainWindow()
@@ -68,6 +71,7 @@ void MainWindow::on_pushButtonWriteAddFile_clicked()
     TapeCatalog catalog(ioTape->mediaInfo.BlockSize, filesToWrite);
     catalog.serialize();
     ui->labelWriteTotal->setText(psize(catalog.totalSize));
+    ui_refresh();
 }
 
 static void _add0(QTableWidget * w, QString dir, QList<QFileInfo> * filesToWrite) {
@@ -99,6 +103,7 @@ void MainWindow::on_pushButtonWriteAddDir_clicked()
     TapeCatalog catalog(ioTape->mediaInfo.BlockSize, filesToWrite);
     catalog.serialize();
     ui->labelWriteTotal->setText(psize(catalog.totalSize));
+    ui_refresh();
 }
 
 void MainWindow::on_pushButtonWriteClear_clicked()
@@ -107,6 +112,7 @@ void MainWindow::on_pushButtonWriteClear_clicked()
     w->setRowCount(0);
     filesToWrite.clear();
     ui->labelWriteTotal->setText("0");
+    ui_refresh();
 }
 
 void MainWindow::on_pushButtonWriteWrite_clicked()
@@ -135,13 +141,94 @@ void MainWindow::on_pushButtonWriteWrite_clicked()
 }
 
 void MainWindow::progress(int i, int n, double percent) {
-    ui->statusbar->showMessage(QString::number(i) + "/" + QString::number(n) + " " + QString::number(percent) + "%");
+    static QElapsedTimer timer;
+    uint32_t eta = 0;
+    if(percent < 0.0000001) {
+        timer.restart();
+    } else {
+        eta = (timer.elapsed() / percent * (100.0 - percent)) / 1000;
+    }
+    QString eta_str;
+    if(percent > 0.0000001 && percent < 99.999999) {
+        eta_str += ", ETA ";
+        eta_str += QString("%1:").arg(eta / 3600, 2, 10, QChar('0'));
+        eta_str += QString("%1:").arg((eta / 60) % 60, 2, 10, QChar('0'));
+        eta_str += QString("%1").arg(eta % 60, 2, 10, QChar('0'));
+    }
+
+    ui->statusbar->showMessage(QString::number(i) + "/" + QString::number(n) + " " + QString::number(percent) + "%" + eta_str);
 }
 
 void MainWindow::on_pushButtonWriteAbort_clicked()
 {
     ioDisk->Flush();
     ioTape->Abort();
+}
+
+void MainWindow::ui_refresh()
+{
+    if(ioTape->isOpened()) {
+        ui->pushButtonOpen->setText("Close");
+        ui->labelBlock->setText(psize(ioTape->mediaInfo.BlockSize));
+        change_pos();
+        ui->labelFree->setText(psize(ioTape->mediaInfo.Remaining.QuadPart) + " (" + QString::number(ioTape->mediaInfo.Remaining.QuadPart * 100 / ioTape->mediaInfo.Capacity.QuadPart) + "%)");
+
+        ui->pushButtonScan->setEnabled(true);
+        ui->pushButtonGetPos->setEnabled(true);
+
+        if(ioTape->mediaPositionBytes < (uint64_t) ioTape->mediaInfo.Capacity.QuadPart - (uint64_t) ioTape->mediaInfo.Remaining.QuadPart) {
+            ui->pushButtonNext->setEnabled(true);
+        }
+
+        ui->pushButtonRead->setEnabled(true);
+        ui->pushButtonReadAbort->setEnabled(true);
+        ui->pushButtonSeek->setEnabled(true);
+        ui->pushButtonSeekFirstFree->setEnabled(true);
+
+        ui->labelRawBlockSize->setText(QString::number(ioTape->mediaInfo.BlockSize));
+        ui->labelRawRemaining->setText(QString::number(ioTape->mediaInfo.Remaining.QuadPart));
+        ui->labelRawCapacity->setText(QString::number(ioTape->mediaInfo.Capacity.QuadPart));
+        ui->labelRawPartitionCount->setText(QString::number(ioTape->mediaInfo.PartitionCount));
+        ui->labelRawWriteProtected->setText(ioTape->mediaInfo.WriteProtected ? "YES" : "NO");
+    } else {
+        ui->pushButtonOpen->setText("Open");
+
+        ui->pushButtonScan->setEnabled(false);
+        ui->pushButtonGetPos->setEnabled(false);
+        ui->pushButtonNext->setEnabled(false);
+        ui->pushButtonRead->setEnabled(false);
+        ui->pushButtonReadAbort->setEnabled(false);
+        ui->pushButtonSeek->setEnabled(false);
+        ui->pushButtonSeekFirstFree->setEnabled(false);
+
+        ui->labelRawBlockSize->setText("?");
+        ui->labelRawRemaining->setText("?");
+        ui->labelRawCapacity->setText("?");
+        ui->labelRawPartitionCount->setText("?");
+        ui->labelRawWriteProtected->setText("?");
+    }
+
+    if(filesToWrite.isEmpty() || !ioTape->isOpened() || ioTape->mediaInfo.WriteProtected) {
+        ui->pushButtonWriteAbort->setEnabled(false);
+        ui->pushButtonWriteWrite->setEnabled(false);
+    } else {
+        ui->pushButtonWriteAbort->setEnabled(true);
+        ui->pushButtonWriteWrite->setEnabled(true);
+    }
+
+    if(filesToWrite.isEmpty()) {
+        ui->pushButtonWriteClear->setEnabled(false);
+    } else {
+        ui->pushButtonWriteClear->setEnabled(true);
+    }
+
+    if(catalog == nullptr || catalog->filesOnTape.isEmpty() || !ioTape->isOpened()) {
+        ui->pushButtonRestoreAll->setEnabled(false);
+        ui->pushButtonExport->setEnabled(false);
+    } else {
+        ui->pushButtonRestoreAll->setEnabled(true);
+        ui->pushButtonExport->setEnabled(true);
+    }
 }
 
 void MainWindow::on_pushButtonOpen_clicked()
@@ -152,14 +239,7 @@ void MainWindow::on_pushButtonOpen_clicked()
         ioTape->Open((QString("\\\\.\\") + ui->lineEditTapeDriveName->text()).toLatin1().data(), 256);
     }
 
-    if(ioTape->isOpened()) {
-        ui->pushButtonOpen->setText("Close");
-        ui->labelBlock->setText(psize(ioTape->mediaInfo.BlockSize));
-        change_pos();
-        ui->labelFree->setText(psize(ioTape->mediaInfo.Remaining.QuadPart) + " (" + QString::number(ioTape->mediaInfo.Remaining.QuadPart * 100 / ioTape->mediaInfo.Capacity.QuadPart) + "%)");
-    } else {
-        ui->pushButtonOpen->setText("Open");
-    }
+    ui_refresh();
 }
 
 void MainWindow::on_pushButtonSeek_clicked()
@@ -190,6 +270,7 @@ void MainWindow::on_pushButtonScan_clicked()
 }
 
 void MainWindow::catalog_readed(TapeCatalog * catalog) {
+    this->catalog = catalog;
     QTableWidget * w = ui->tableWidgetReadFileList;
     uint64_t total = 0;
     w->setRowCount(0);
@@ -203,8 +284,7 @@ void MainWindow::catalog_readed(TapeCatalog * catalog) {
     }
     w->resizeColumnsToContents();
     ui->labelReadTotal->setText(psize(total));
-    ui->pushButtonExport->setEnabled(true);
-    ui->pushButtonRestoreAll->setEnabled(true);
+    ui_refresh();
 }
 
 void MainWindow::change_pos(void) {
@@ -275,7 +355,9 @@ void MainWindow::on_pushButtonExport_clicked()
 
     for(int i = 0; i < ioTape->tapeCatalog->filesOnTape.length(); i++) {
         auto res = ioTape->tapeCatalog->filesOnTape.value(i);
-        f.write((res.fileNamePath.toLatin1() + QString(",") + QString::number(res.fileSize) + QString(",") + QString::number(res.offset)).toUtf8().append('\n'));
+        QString a = res.fileNamePath + QString(",") + QString::number(res.fileSize) + QString(",") + QString::number(res.offset);
+        QByteArray b = a.toUtf8();
+        f.write(b.append('\n'));
     }
     f.close();
 }

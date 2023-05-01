@@ -62,6 +62,7 @@ private:
     IOTape * ioTape = nullptr;
     IODisk * ioDisk = nullptr;
     QList<QFileInfo> filesToWrite;
+    TapeCatalog * catalog = nullptr;
 
     QString psize(uint64_t size) {
         if(size > 3ULL * 1024 * 1024 * 1024)
@@ -73,5 +74,6 @@ private:
         else
             return QString::number(size);
     }
+    void ui_refresh();
 };
 #endif // MAINWINDOW_H

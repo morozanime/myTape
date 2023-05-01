@@ -32,7 +32,9 @@ int IOTape::Open(const char * device, int buffLen) {
         memset(&driveInfo, 0, sizeof(driveInfo));
 
         DWORD lpdwSize;
+        lpdwSize = sizeof(driveInfo);
         GetTapeParameters(hTape, GET_TAPE_DRIVE_INFORMATION, &lpdwSize, &driveInfo);
+        lpdwSize = sizeof(mediaInfo);
         GetTapeParameters(hTape, GET_TAPE_MEDIA_INFORMATION, &lpdwSize, &mediaInfo);
 
         GetPosition();

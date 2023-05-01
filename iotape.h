@@ -101,12 +101,16 @@ protected:
                     }
                     if(tapeCatalog->search(c.positionBytes, (const char*) c.data, c.len) >= 0) {
                         iTotal++;
+                        emit progress(iTotal, nTotal, 100);
                         state = TAPE_IDLE;
                         emit catalog_readed(tapeCatalog);
+                        mediaPositionBytes += c.len;
+                    } else {
+
+                        mediaPositionBytes += c.len;
+                        emit progress(iTotal, nTotal, (double) (mediaPositionBytes * 100) / mediaInfo.Capacity.QuadPart);
                     }
-                    mediaPositionBytes += c.len;
                     emit change_pos();
-                    emit progress(iTotal, nTotal, (double) (mediaPositionBytes * 100) / mediaInfo.Capacity.QuadPart);
                     free(c.data);
                 } else {
                     delete tapeCatalog;
@@ -261,14 +265,6 @@ public:
         }
         return 0;
     }
-
-//    int Pull(void) {
-//        if(qRead.isEmpty())
-//            return -1;
-//        Chunk_t c = qRead.dequeue();
-//        free(c.data);
-//        return 0;
-//    }
 
     bool isOpened(void) {
         return hTape != INVALID_HANDLE_VALUE;
