@@ -156,7 +156,7 @@ void MainWindow::progress(int i, int n, double percent) {
         eta_str += QString("%1").arg(eta % 60, 2, 10, QChar('0'));
     }
 
-    ui->statusbar->showMessage(QString::number(i) + "/" + QString::number(n) + " " + QString::number(percent) + "%" + eta_str);
+    ui->statusbar->showMessage(QString::number(i) + "/" + QString::number(n) + " " + QString("%1%").arg(percent, 6, 'f', 2, ' ') + eta_str);
 }
 
 void MainWindow::on_pushButtonWriteAbort_clicked()
@@ -171,7 +171,9 @@ void MainWindow::ui_refresh()
         ui->pushButtonOpen->setText("Close");
         ui->labelBlock->setText(psize(ioTape->mediaInfo.BlockSize));
         change_pos();
-        ui->labelFree->setText(psize(ioTape->mediaInfo.Remaining.QuadPart) + " (" + QString::number(ioTape->mediaInfo.Remaining.QuadPart * 100 / ioTape->mediaInfo.Capacity.QuadPart) + "%)");
+        if(ioTape->mediaInfo.Capacity.QuadPart > 0) {
+            ui->labelFree->setText(psize(ioTape->mediaInfo.Remaining.QuadPart) + " (" + QString::number(ioTape->mediaInfo.Remaining.QuadPart * 100 / ioTape->mediaInfo.Capacity.QuadPart) + "%)");
+        }
 
         ui->pushButtonScan->setEnabled(true);
         ui->pushButtonGetPos->setEnabled(true);
@@ -249,8 +251,7 @@ void MainWindow::on_pushButtonSeek_clicked()
 
 void MainWindow::on_pushButtonGetPos_clicked()
 {
-    ioTape->GetPosition();
-    change_pos();
+    ioTape->Command(IOTape::CMD_GETPOS);
 }
 
 void MainWindow::on_pushButtonRead_clicked()
@@ -288,11 +289,15 @@ void MainWindow::catalog_readed(TapeCatalog * catalog) {
 }
 
 void MainWindow::change_pos(void) {
-    QString a = QString::number(ioTape->mediaPositionBytes);
-    a += " / ";
-    a += QString::number(ioTape->mediaInfo.Capacity.QuadPart);
-    a += " (" + QString::number(ioTape->mediaPositionBytes * 100 / ioTape->mediaInfo.Capacity.QuadPart) + "%)";
-    ui->labelPos->setText(a);
+    if(ioTape->mediaInfo.Capacity.QuadPart > 0) {
+        QString a = QString::number(ioTape->mediaPositionBytes);
+        a += " / ";
+        a += QString::number(ioTape->mediaInfo.Capacity.QuadPart);
+        a += " (" + QString::number(ioTape->mediaPositionBytes * 100 / ioTape->mediaInfo.Capacity.QuadPart) + "%)";
+        ui->labelPos->setText(a);
+    } else {
+        ui->labelPos->setText("No tape");
+    }
 }
 
 void MainWindow::error_message(QString message){
@@ -342,22 +347,8 @@ void MainWindow::on_pushButtonExport_clicked()
     QString csv = QFileDialog::getSaveFileName(this, "Save catalog");
     if(csv.isEmpty())
         return;
-    QFile f = QFile(csv);
-    if(!f.open(QFile::WriteOnly)) {
+    if(ioTape->tapeCatalog->export_to_file(QFile(csv))) {
         QMessageBox::critical(this, "Open file error", "Error open file for writing");
         return;
     }
-
-    f.write(("offsetOnTape," + QString::number(ioTape->tapeCatalog->offsetOnTape)).toLatin1().append('\n'));
-    f.write(("totalSize," + QString::number(ioTape->tapeCatalog->totalSize)).toLatin1().append('\n'));
-    f.write(("files," + QString::number(ioTape->tapeCatalog->filesOnTape.length())).toLatin1().append('\n'));
-    f.write(QString("Name,Size,Offset,").toLatin1().append('\n'));
-
-    for(int i = 0; i < ioTape->tapeCatalog->filesOnTape.length(); i++) {
-        auto res = ioTape->tapeCatalog->filesOnTape.value(i);
-        QString a = res.fileNamePath + QString(",") + QString::number(res.fileSize) + QString(",") + QString::number(res.offset);
-        QByteArray b = a.toUtf8();
-        f.write(b.append('\n'));
-    }
-    f.close();
 }

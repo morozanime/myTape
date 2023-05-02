@@ -3,13 +3,14 @@
 
 #include <QList>
 #include <QFileInfo>
+#include <QFile>
 #include <QByteArray>
 #include "myqbytearray.h"
 
 class TapeCatalog
 {
 public:
-    TapeCatalog(uint32_t blockSize, QList<QFileInfo> files = QList<QFileInfo>()) {
+   TapeCatalog(uint32_t blockSize, QList<QFileInfo> files = QList<QFileInfo>()) {
         this->blockSize = blockSize;
         this->filesOnDisk = files;
     }
@@ -147,6 +148,34 @@ public:
             }
         }
         return -1;
+    }
+
+    enum ExportFileFormat {
+        CSV,
+    };
+
+    int export_to_file(QFile f, ExportFileFormat format = CSV) {
+        if(format == CSV) {
+            if(!f.open(QFile::WriteOnly)) {
+                return -2;
+            }
+
+            f.write(("offsetOnTape," + QString::number(offsetOnTape)).toLatin1().append('\n'));
+            f.write(("totalSize," + QString::number(totalSize)).toLatin1().append('\n'));
+            f.write(("files," + QString::number(filesOnTape.length())).toLatin1().append('\n'));
+            f.write(QString("Name,Size,Offset,").toLatin1().append('\n'));
+
+            for(int i = 0; i < filesOnTape.length(); i++) {
+                auto res = filesOnTape.value(i);
+                QString a = "\"" + res.fileNamePath + QString("\",") + QString::number(res.fileSize) + QString(",") + QString::number(res.offset);
+                QByteArray b = a.toUtf8();
+                f.write(b.append('\n'));
+            }
+            f.close();
+        } else {
+            return -1;
+        }
+        return 0;
     }
 
     typedef struct {

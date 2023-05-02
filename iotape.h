@@ -54,6 +54,12 @@ protected:
                         tapeCatalog = new TapeCatalog(mediaInfo.BlockSize);
                         state = TAPE_SCAN;
                         break;
+                    case CMD_GETPOS:
+                        GetPosition();
+                        iTotal++;
+                        emit change_pos();
+                        emit progress(iTotal, nTotal, 100);
+                        break;
                     }
                     break;
                 }
@@ -187,7 +193,7 @@ public:
     void Close(void);
 
     typedef enum {
-        CMD_SEEK, CMD_READ, CMD_WRITE, CMD_SCAN,
+        CMD_SEEK, CMD_READ, CMD_WRITE, CMD_SCAN, CMD_GETPOS,
     } E_Command;
 
     typedef enum {
@@ -216,7 +222,7 @@ public:
         }
     }
 
-    void Command(E_Command cmd, uint64_t arg) {
+    void Command(E_Command cmd, uint64_t arg = 0) {
         nTotal++;
         Command_t c;
         c.cmd = cmd;
