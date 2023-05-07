@@ -22,25 +22,27 @@ protected:
             buff = malloc(ioTape->max_chunk_len);
         }
         uint32_t n = 0;
-        uint64_t restorePosBytes = 0;
-        if(ioTape->Read(buff, &n, &restorePosBytes) != 0 || n == 0) {
+        uint64_t buffStart = 0;
+        if(ioTape->Read(buff, &n, &buffStart) != 0 || n == 0) {
             return;
         }
         while(restoreFileIndex < restoreCatalog->filesOnTape.length()) {
             TapeCatalog::fileOnTape_t f = restoreCatalog->filesOnTape.value(restoreFileIndex);
-//                        emit log(1, "pos:" + QString::number(restorePosBytes) + " offset:" + QString::number(f.offset) + " fileSize:" + QString::number(f.fileSize) + " n:" + QString::number(n) + " restoreFileIndex:" + QString::number(restoreFileIndex));
+            emit log(1, "pos:" + QString::number(buffStart) + " offset:" + QString::number(f.offset) + " fileSize:" + QString::number(f.fileSize) + " n:" + QString::number(n) + " restoreFileIndex:" + QString::number(restoreFileIndex));
             if(restoreFileCurrent != nullptr) {
-                if(f.offset + f.fileSize > restorePosBytes + n) {
+                if(f.offset + f.fileSize > buffStart + n) {
+                    emit log(1, "write full chunk ");
                     restoreFileCurrent->write((const char *) buff, n);
                     break;
                 } else {
-                    restoreFileCurrent->write((const char *) buff, (f.offset + f.fileSize) - restorePosBytes);
+                    emit log(1, "write end " + QString::number((f.offset + f.fileSize) - buffStart) + " bytes");
+                    restoreFileCurrent->write((const char *) buff, (f.offset + f.fileSize) - buffStart);
                     restoreFileCurrent->close();
                     restoreFileCurrent = nullptr;
                     restoreFileIndex++;
                 }
-            } else if(f.offset >= restorePosBytes && f.offset < restorePosBytes + n) {
-//                            emit log(1, "create");
+            } else if(f.offset >= buffStart && f.offset < buffStart + n) {
+                emit log(1, "create");
                 //create dirs
                 QString a0 = f.fileNamePath;
                 if(a0.contains(":/"))
@@ -56,7 +58,7 @@ protected:
                     continue;
                 }
                 //open file
-//                            emit log(1, fullPathName);
+                emit log(1, fullPathName);
                 restoreFileCurrent = new QFile(fullPathName);
                 if(!restoreFileCurrent->open(QFile::OpenModeFlag::WriteOnly | QFile::OpenModeFlag::Truncate | QFile::OpenModeFlag::Unbuffered)) {
                     restoreFileCurrent = nullptr;
@@ -64,14 +66,18 @@ protected:
                     continue;
                 }
                 uint64_t l = f.fileSize;
-                if(l > n - (f.offset - restorePosBytes)) {
-                    l = n - (f.offset - restorePosBytes);
+                uint64_t buffLeft = f.offset - buffStart;
+                uint64_t buffRight = (buffStart + n) - f.offset;
+                if(l > buffRight) {
+                    l = buffRight;
                 }
-                restoreFileCurrent->write((const char *) buff + f.offset - restorePosBytes, l);
+                restoreFileCurrent->write((const char *) buff + buffLeft, l);
                 if(f.fileSize <= l) {
                     restoreFileCurrent->close();
                     restoreFileCurrent = nullptr;
                     restoreFileIndex++;
+                } else {
+                    break;
                 }
             } else {
                 break;
