@@ -47,6 +47,8 @@ protected:
                 QString a0 = f.fileNamePath;
                 if(a0.contains(":/"))
                     a0 = f.fileNamePath.split(":/", Qt::SkipEmptyParts).last();
+                else if(a0.contains("//"))
+                    a0 = f.fileNamePath.split("//", Qt::SkipEmptyParts).last();
                 QStringList a1 = a0.split("/");
                 QString name = a1.last();
                 a1.removeLast();
