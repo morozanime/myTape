@@ -137,7 +137,7 @@ public:
                     f.offset = searchBuff.read_u64lsbf(c_pos);
                     c_pos += 8;
 
-                    uint64_t fileSizeRounded = (f.fileSize + blockSize - 1) & ~(blockSize - 1);
+                    uint64_t fileSizeRounded = (uint64_t)(f.fileSize + blockSize - 1) & ~(uint64_t)(blockSize - 1);
                     if(totalSize < f.offset + fileSizeRounded) {
                         totalSize = f.offset + fileSizeRounded;
                     }
@@ -188,7 +188,7 @@ public:
     uint64_t totalSize = 0;
 
 private:
-    uint32_t blockSize;
+    uint64_t blockSize;
     QList<QFileInfo> filesOnDisk;
     const QByteArray signature = QString("my!tape!catalog!0.0").toLatin1();
 

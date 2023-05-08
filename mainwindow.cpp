@@ -142,27 +142,30 @@ void MainWindow::on_pushButtonWriteWrite_clicked()
 
 void MainWindow::progress(int i, int n, double percent) {
     static QElapsedTimer timer;
-    uint32_t eta = 0;
+    qint64 timeRemaining = 0;
+    static qint64 timeElapsed = 0;
     if(percent < 0.0000001) {
         timer.restart();
-    } else {
-        eta = (timer.elapsed() / percent * (100.0 - percent)) / 1000;
+    } else if(percent < 99.999999) {
+        timeRemaining = (timer.elapsed() / percent * (100.0 - percent)) / 1000;
+        timeElapsed = timer.elapsed() / 1000;
     }
+
     QString eta_str;
-    if(percent > 0.0000001 && percent < 99.999999) {
-        eta_str += ", ETA ";
-        eta_str += QString("%1:").arg(eta / 3600, 2, 10, QChar('0'));
-        eta_str += QString("%1:").arg((eta / 60) % 60, 2, 10, QChar('0'));
-        eta_str += QString("%1").arg(eta % 60, 2, 10, QChar('0'));
+    if(percent > 0.0000001) {
+        eta_str += ", Time ";
+        eta_str += QString("%1:").arg(timeElapsed / 3600, 2, 10, QChar('0'));
+        eta_str += QString("%1:").arg((timeElapsed / 60) % 60, 2, 10, QChar('0'));
+        eta_str += QString("%1").arg(timeElapsed % 60, 2, 10, QChar('0'));
+    }
+    if(percent < 99.999999) {
+        eta_str += ", Remaining ";
+        eta_str += QString("%1:").arg(timeRemaining / 3600, 2, 10, QChar('0'));
+        eta_str += QString("%1:").arg((timeRemaining / 60) % 60, 2, 10, QChar('0'));
+        eta_str += QString("%1").arg(timeRemaining % 60, 2, 10, QChar('0'));
     }
 
     ui->statusbar->showMessage(QString::number(i) + "/" + QString::number(n) + " " + QString("%1%").arg(percent, 6, 'f', 2, ' ') + eta_str);
-}
-
-void MainWindow::on_pushButtonWriteAbort_clicked()
-{
-    ioDisk->Flush();
-    ioTape->Abort();
 }
 
 void MainWindow::ui_refresh()
@@ -352,3 +355,16 @@ void MainWindow::on_pushButtonExport_clicked()
         return;
     }
 }
+
+void MainWindow::on_pushButtonReadAbort_clicked()
+{
+    ioDisk->Flush();
+    ioTape->Abort();
+}
+
+void MainWindow::on_pushButtonWriteAbort_clicked()
+{
+    ioDisk->Flush();
+    ioTape->Abort();
+}
+

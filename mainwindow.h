@@ -56,6 +56,8 @@ private slots:
 
     void on_pushButtonExport_clicked();
 
+    void on_pushButtonReadAbort_clicked();
+
 private:
     Ui::MainWindow *ui;
 

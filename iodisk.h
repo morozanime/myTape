@@ -15,6 +15,11 @@ protected:
     inline void process_restore()
     {
         if(restoreFileIndex >= restoreCatalog->filesOnTape.length()) {
+            if(restoreFileCurrent != nullptr) {
+                emit log(1, "close last");
+                restoreFileCurrent->close();
+                restoreFileCurrent = nullptr;
+            }
             restoreCatalog = nullptr;
             return;
         }
@@ -75,6 +80,7 @@ protected:
                 }
                 restoreFileCurrent->write((const char *) buff + buffLeft, l);
                 if(f.fileSize <= l) {
+                    emit log(1, "close");
                     restoreFileCurrent->close();
                     restoreFileCurrent = nullptr;
                     restoreFileIndex++;
@@ -177,7 +183,15 @@ public:
     }
 
     ~IODisk(){
-
+        if(restoreFileCurrent != nullptr) {
+            emit log(1, "close last (destructor)");
+            restoreFileCurrent->close();
+            restoreFileCurrent = nullptr;
+        }
+        if(rawFile != nullptr) {
+            rawFile->close();
+            rawFile = nullptr;
+        }
     }
 
     void Write(QFileInfo f) {
