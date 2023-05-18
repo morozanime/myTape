@@ -46,6 +46,9 @@ protected:
                     restoreFileCurrent = nullptr;
                     restoreFileIndex++;
                 }
+            } else if(f.skip) {
+                restoreFileIndex++;
+                continue;
             } else if(f.offset >= buffStart && f.offset < buffStart + n) {
                 emit log(1, "create");
                 //create dirs
@@ -225,8 +228,30 @@ public:
         restoreFileIndex = 0;
         restoreCatalog = catalog;
         restoreRootDir = root;
+        for(auto i = 0; i < catalog->filesOnTape.count(); i++) {
+            catalog->filesOnTape[i].skip = false;
+        }
         ioTape->Command(IOTape::CMD_SEEK, catalog->offsetOnTape);
         ioTape->Command(IOTape::CMD_READ, catalog->totalSize);
+    }
+
+    void Restore(QString root, TapeCatalog * catalog, QList<int> selected) {
+        restoreFileIndex = 0;
+        restoreCatalog = catalog;
+        restoreRootDir = root;
+        for(auto i = 0; i < catalog->filesOnTape.count(); i++) {
+            catalog->filesOnTape[i].skip = true;
+        }
+        for(auto i = 0; i < selected.count(); i++) {
+            if(selected.value(i) >= catalog->filesOnTape.count())
+                continue;
+            TapeCatalog::fileOnTape_t f = catalog->filesOnTape.value(selected.value(i));
+            catalog->filesOnTape[selected[i]].skip = false;
+            if(f.fileSize > 0) {
+                ioTape->Command(IOTape::CMD_SEEK, f.offset);
+                ioTape->Command(IOTape::CMD_READ, ioTape->RoundUp(f.fileSize));
+            }
+        }
     }
 
 signals:

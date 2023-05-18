@@ -14,7 +14,8 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     myqbytearray.cpp \
-    tapecatalog.cpp
+    tapecatalog.cpp \
+    worker_writefilelist.cpp
 
 HEADERS += \
     ASYNC_queue.h \
@@ -22,7 +23,8 @@ HEADERS += \
     iotape.h \
     mainwindow.h \
     myqbytearray.h \
-    tapecatalog.h
+    tapecatalog.h \
+    worker_writefilelist.h
 
 FORMS += \
     mainwindow.ui

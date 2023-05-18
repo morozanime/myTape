@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include "iotape.h"
 #include "iodisk.h"
+#include "worker_writefilelist.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -25,6 +26,9 @@ public slots:
     void error_message(QString message);
     void change_cache(uint64_t size);
     void log(int level, QString message);
+    void worker_writefilelist_AddFile(QString path, qint64 size);
+    void worker_writefilelist_CatalogReady(qint64 total_size);
+    void worker_writefilelist_Clear(void);
 
 private slots:
     void on_pushButtonWriteAddFile_clicked();
@@ -58,13 +62,16 @@ private slots:
 
     void on_pushButtonReadAbort_clicked();
 
+    void on_pushButtonRestore_clicked();
+
 private:
     Ui::MainWindow *ui;
 
     IOTape * ioTape = nullptr;
     IODisk * ioDisk = nullptr;
-    QList<QFileInfo> filesToWrite;
-    TapeCatalog * catalog = nullptr;
+    Worker_WriteFileList * w_writeFileList = nullptr;
+//    QList<QFileInfo> filesToWrite;
+    TapeCatalog * read_catalog = nullptr;
 
     QString psize(uint64_t size) {
         if(size > 3ULL * 1024 * 1024 * 1024)

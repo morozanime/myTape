@@ -10,7 +10,7 @@
 class TapeCatalog
 {
 public:
-   TapeCatalog(uint32_t blockSize, QList<QFileInfo> files = QList<QFileInfo>()) {
+    TapeCatalog(uint32_t blockSize, QList<QFileInfo> files = QList<QFileInfo>()) {
         this->blockSize = blockSize;
         this->filesOnDisk = files;
     }
@@ -182,6 +182,7 @@ public:
         QString fileNamePath;
         uint64_t fileSize;
         uint64_t offset;
+        bool skip;
     } fileOnTape_t;
     QList<fileOnTape_t> filesOnTape;
     uint64_t offsetOnTape = 0;

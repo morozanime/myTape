@@ -31,6 +31,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     ioTape = new IOTape();
     ioDisk = new IODisk(ioTape);
+    w_writeFileList = new Worker_WriteFileList();
 
     connect(ioTape, &IOTape::progress, this, &MainWindow::progress);
     connect(ioTape, &IOTape::catalog_readed, this, &MainWindow::catalog_readed);
@@ -39,6 +40,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ioTape, &IOTape::change_cache, this, &MainWindow::change_cache);
     connect(ioTape, &IOTape::log, this, &MainWindow::log);
     connect(ioDisk, &IODisk::log, this, &MainWindow::log);
+    connect(w_writeFileList, &Worker_WriteFileList::AddFile, this, &MainWindow::worker_writefilelist_AddFile);
+    connect(w_writeFileList, &Worker_WriteFileList::CatalogReady, this, &MainWindow::worker_writefilelist_CatalogReady);
+    connect(w_writeFileList, &Worker_WriteFileList::Clear, this, &MainWindow::worker_writefilelist_Clear);
+    connect(w_writeFileList, &Worker_WriteFileList::progress, this, &MainWindow::progress);
     ioTape->start();
     ioDisk->start();
 
@@ -49,95 +54,107 @@ MainWindow::~MainWindow()
 {
     ioDisk->terminate();
     ioTape->terminate();
+    w_writeFileList->terminate();
     delete ioDisk;
     delete ioTape;
+    delete w_writeFileList;
 
     delete ui;
 }
 
 void MainWindow::on_pushButtonWriteAddFile_clicked()
 {
-    QTableWidget * w = ui->tableWidgetWriteFileList;
     QStringList fileNames = QFileDialog::getOpenFileNames(this, tr("Select file(s)"));
-    for(int i = 0; i < fileNames.length(); i++) {
-        QFileInfo f(fileNames.value(i));
-        filesToWrite.append(f);
-        int row = w->rowCount();
-        w->insertRow(row);
-        w->setItem(row, 0, new QTableWidgetItem(f.absoluteFilePath()));
-        w->setItem(row, 1, new QTableWidgetItem(QString::number(f.size())));
+    w_writeFileList->blockSize = ioTape->mediaInfo.BlockSize;
+    w_writeFileList->Cmd_AddFile(fileNames);
+    if(!w_writeFileList->isRunning()) {
+        w_writeFileList->start();
     }
-    w->resizeColumnsToContents();
-    TapeCatalog catalog(ioTape->mediaInfo.BlockSize, filesToWrite);
-    catalog.serialize();
-    ui->labelWriteTotal->setText(psize(catalog.totalSize));
-    ui_refresh();
-}
-
-static void _add0(QTableWidget * w, QString dir, QList<QFileInfo> * filesToWrite) {
-    QDirIterator * itFiles = new QDirIterator(dir, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
-    while (itFiles->hasNext()) {
-        itFiles->next();
-        QFileInfo f = itFiles->fileInfo();
-        if(f.isDir()) {
-            _add0(w, f.absoluteFilePath(), filesToWrite);
-        } else {
-            filesToWrite->append(f);
-            int row = w->rowCount();
-            w->insertRow(row);
-            w->setItem(row, 0, new QTableWidgetItem(f.absoluteFilePath()));
-            w->setItem(row, 1, new QTableWidgetItem(QString::number(f.size())));
-        }
-    }
-    delete itFiles;
 }
 
 void MainWindow::on_pushButtonWriteAddDir_clicked()
 {
-    QTableWidget * w = ui->tableWidgetWriteFileList;
     QString dir = QFileDialog::getExistingDirectory(this, "Select dir");
     if(dir.isEmpty())
         return;
-    _add0(w, dir, &filesToWrite);
+    w_writeFileList->blockSize = ioTape->mediaInfo.BlockSize;
+    w_writeFileList->Cmd_AddDir(dir);
+
+    if(!w_writeFileList->isRunning()) {
+        w_writeFileList->start();
+    }
+}
+
+void MainWindow::worker_writefilelist_AddFile(QString path, qint64 size) {
+    QTableWidget * w = ui->tableWidgetWriteFileList;
+    int row = w->rowCount();
+    w->insertRow(row);
+    w->setItem(row, 0, new QTableWidgetItem(path));
+    w->setItem(row, 1, new QTableWidgetItem(QString::number(size)));
+}
+
+void MainWindow::worker_writefilelist_CatalogReady(qint64 total_size){
+    QTableWidget * w = ui->tableWidgetWriteFileList;
     w->resizeColumnsToContents();
-    TapeCatalog catalog(ioTape->mediaInfo.BlockSize, filesToWrite);
-    catalog.serialize();
-    ui->labelWriteTotal->setText(psize(catalog.totalSize));
+    ui->labelWriteTotal->setText(psize(total_size));
+    ui_refresh();
+//    w_writeFileList->terminate();
+}
+
+void MainWindow::worker_writefilelist_Clear(void){
+    QTableWidget * w = ui->tableWidgetWriteFileList;
+    w->setRowCount(0);
+    ui->labelWriteTotal->setText("0");
     ui_refresh();
 }
 
 void MainWindow::on_pushButtonWriteClear_clicked()
 {
-    QTableWidget * w = ui->tableWidgetWriteFileList;
-    w->setRowCount(0);
-    filesToWrite.clear();
-    ui->labelWriteTotal->setText("0");
-    ui_refresh();
+    w_writeFileList->Cmd_Clear();
+
+    if(!w_writeFileList->isRunning()) {
+        w_writeFileList->start();
+    }
 }
 
 void MainWindow::on_pushButtonWriteWrite_clicked()
 {
-    if(filesToWrite.isEmpty())
+    if(ioTape->GetState() != IOTape::TAPE_IDLE) {
+        QMessageBox::critical(this, "Error", "Tape is busy");
         return;
-    TapeCatalog catalog(ioTape->mediaInfo.BlockSize, filesToWrite);
-    QByteArray catalogImg = catalog.serialize();
-    if(ioTape->mediaInfo.Capacity.QuadPart - ioTape->mediaPositionBytes < catalog.totalSize) {
-        QMessageBox::critical(this, "Catalog too large", psize(catalog.totalSize - (ioTape->mediaInfo.Capacity.QuadPart - ioTape->mediaPositionBytes)) + " over");
+    }
+
+    if(w_writeFileList->filesToWrite.isEmpty()) {
+        QMessageBox::information(this, "Info", "Nothing to write");
+        return;
+    }
+
+    if(ioTape->mediaInfo.Capacity.QuadPart - ioTape->mediaPositionBytes < w_writeFileList->catalog->totalSize) {
+        QMessageBox::critical(this, "Catalog too large", psize(w_writeFileList->catalog->totalSize - (ioTape->mediaInfo.Capacity.QuadPart - ioTape->mediaPositionBytes)) + " over");
         return;
     }
 
     QString catalogTmpFileName = "$tmp$.catalog";
     QFile fileImg(catalogTmpFileName);
-    if(fileImg.open(QFile::OpenModeFlag::WriteOnly | QFile::OpenModeFlag::Truncate)) {
-        fileImg.write(catalogImg);
-        fileImg.close();
-    }
-    ioDisk->Write(QFileInfo(catalogTmpFileName));
-    for(int i = 0; i < filesToWrite.length(); i++) {
-        ioDisk->Write(filesToWrite.value(i));
+    if(!fileImg.open(QFile::OpenModeFlag::WriteOnly | QFile::OpenModeFlag::Truncate)) {
+        QMessageBox::critical(this, "Error", "Catalog file create error");
+        return;
     }
 
-    ioTape->Command(IOTape::CMD_WRITE, catalog.totalSize);
+    if(fileImg.write(w_writeFileList->catalog_serialized) != w_writeFileList->catalog_serialized.length()) {
+        fileImg.close();
+        QMessageBox::critical(this, "Error", "Catalog file write error");
+        return;
+    }
+
+    fileImg.close();
+
+    ioDisk->Write(QFileInfo(catalogTmpFileName));
+    for(int i = 0; i < w_writeFileList->filesToWrite.length(); i++) {
+        ioDisk->Write(w_writeFileList->filesToWrite.value(i));
+    }
+
+    ioTape->Command(IOTape::CMD_WRITE, w_writeFileList->catalog->totalSize);
 }
 
 void MainWindow::progress(int i, int n, double percent) {
@@ -213,7 +230,7 @@ void MainWindow::ui_refresh()
         ui->labelRawWriteProtected->setText("?");
     }
 
-    if(filesToWrite.isEmpty() || !ioTape->isOpened() || ioTape->mediaInfo.WriteProtected) {
+    if(w_writeFileList->filesToWrite.isEmpty() || !ioTape->isOpened() || ioTape->mediaInfo.WriteProtected) {
         ui->pushButtonWriteAbort->setEnabled(false);
         ui->pushButtonWriteWrite->setEnabled(false);
     } else {
@@ -221,16 +238,18 @@ void MainWindow::ui_refresh()
         ui->pushButtonWriteWrite->setEnabled(true);
     }
 
-    if(filesToWrite.isEmpty()) {
+    if(w_writeFileList->filesToWrite.isEmpty()) {
         ui->pushButtonWriteClear->setEnabled(false);
     } else {
         ui->pushButtonWriteClear->setEnabled(true);
     }
 
-    if(catalog == nullptr || catalog->filesOnTape.isEmpty() || !ioTape->isOpened()) {
+    if(read_catalog == nullptr || read_catalog->filesOnTape.isEmpty() || !ioTape->isOpened()) {
+        ui->pushButtonRestore->setEnabled(false);
         ui->pushButtonRestoreAll->setEnabled(false);
         ui->pushButtonExport->setEnabled(false);
     } else {
+        ui->pushButtonRestore->setEnabled(true);
         ui->pushButtonRestoreAll->setEnabled(true);
         ui->pushButtonExport->setEnabled(true);
     }
@@ -274,7 +293,7 @@ void MainWindow::on_pushButtonScan_clicked()
 }
 
 void MainWindow::catalog_readed(TapeCatalog * catalog) {
-    this->catalog = catalog;
+    this->read_catalog = catalog;
     QTableWidget * w = ui->tableWidgetReadFileList;
     uint64_t total = 0;
     w->setRowCount(0);
@@ -305,6 +324,25 @@ void MainWindow::change_pos(void) {
 
 void MainWindow::error_message(QString message){
     QMessageBox::critical(this, "Error", message);
+}
+
+void MainWindow::on_pushButtonRestore_clicked()
+{
+    QTableWidget * w = ui->tableWidgetReadFileList;
+    if(ioTape->tapeCatalog == nullptr || ioTape->tapeCatalog->filesOnTape.isEmpty() || w->selectedItems().length() == 0)
+        return;
+    QString dir = QFileDialog::getExistingDirectory(this, "Select root dir");
+    if(dir.isEmpty())
+        return;
+    QList<int> selected;
+    for(int i = 0; i < w->rowCount(); i++) {
+        if(w->item(i, 0)->isSelected()) {
+            selected.append(i);
+        }
+    }
+    if(selected.isEmpty())
+        return;
+    ioDisk->Restore(dir, ioTape->tapeCatalog, selected);
 }
 
 void MainWindow::on_pushButtonRestoreAll_clicked()
@@ -367,4 +405,3 @@ void MainWindow::on_pushButtonWriteAbort_clicked()
     ioDisk->Flush();
     ioTape->Abort();
 }
-

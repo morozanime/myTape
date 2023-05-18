@@ -95,6 +95,7 @@ int IOTape::_io_write_blocking(void * src, uint32_t len) {
 }
 
 int IOTape::_io_seek_blocking(uint64_t pos) {
+    pos /= this->mediaInfo.BlockSize;
 #ifdef  TAPE_EMULATION_FILE
 #else   /*TAPE_EMULATION_FILE*/
     DWORD dwOffsetLow = (DWORD) pos;

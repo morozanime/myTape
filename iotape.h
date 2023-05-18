@@ -175,6 +175,7 @@ public:
     IOTape() {
         memset(&mediaInfo, 0, sizeof(mediaInfo));
         memset(&driveInfo, 0, sizeof(driveInfo));
+        mediaPositionBytes = 0;
     }
 
     ~IOTape() {
@@ -276,6 +277,10 @@ public:
         return hTape != INVALID_HANDLE_VALUE;
     }
 
+    uint64_t RoundUp(uint64_t size) {
+        return (uint64_t)(size + mediaInfo.BlockSize - 1) & ~(uint64_t)(mediaInfo.BlockSize - 1);
+    }
+
     uint32_t max_chunk_len = 1024 * 1024;
     uint32_t writeCacheSizeMax = 256 * 1024 * 1024;
 
@@ -285,12 +290,15 @@ public:
     TapeCatalog * tapeCatalog = nullptr;
 
     uint64_t GetPosition(void) {
+#ifdef  TAPE_EMULATION_FILE
+#else   /*TAPE_EMULATION_FILE*/
         DWORD dwPartition = 0;
         DWORD dwOffsetLow = 0;
         DWORD dwOffsetHigh = 0;
         GetTapePosition(hTape, TAPE_ABSOLUTE_POSITION, &dwPartition, &dwOffsetLow, &dwOffsetHigh);
 
         mediaPositionBytes = (((uint64_t) dwOffsetHigh << 32) | dwOffsetLow) * mediaInfo.BlockSize;
+#endif  /*TAPE_EMULATION_FILE*/
         return mediaPositionBytes;
     }
 
