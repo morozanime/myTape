@@ -10,6 +10,11 @@
 class TapeCatalog
 {
 public:
+    typedef enum {
+        VERSION_0_0,
+        VERSION_0_1,
+    } Version_e;
+
     TapeCatalog(uint32_t blockSize, QList<QFileInfo> files = QList<QFileInfo>()) {
         this->blockSize = blockSize;
         this->filesOnDisk = files;
@@ -45,9 +50,32 @@ public:
      *
     */
 
-    QByteArray serialize(void) {
+    /*
+     * lsbf
+     * +0: signature1
+     * +x: uint32_t catalog.length()
+     * {
+     * +n+0: uint16_t file.absoluteFilePath().toUtf8().length()
+     * +n+2: file.absoluteFilePath().toUtf8()
+     * +n+2+l: uint64_t file.size()
+     * +n+2+l+8: uint64_t offset;
+     * +n+2+l+8+8: uint64_t datetime_ms;
+     * +n+2+l+8+8+8: uint64_t attr;
+     *
+     * }
+     * +z: uint16_t 0
+     *
+     *
+    */
+
+    QByteArray serialize(Version_e v = VERSION_0_1) {
+        this->ver = v;
         myQByteArray catalog;
-        catalog.append(signature);
+        if(ver == VERSION_0_0) {
+            catalog.append(signature);
+        } else if(ver == VERSION_0_1) {
+            catalog.append(signature1);
+        }
         qsizetype catalogLenPos = catalog.length();
         catalog.append_lsbf((uint32_t) 0);
 
@@ -60,14 +88,41 @@ public:
         uint64_t baseOffset = 0;
         for(int i = 0; i < filesOnDisk.length(); i++) {
             QByteArray fileNamePath = filesOnDisk.value(i).absoluteFilePath().toUtf8();
-            uint64_t fileSize = filesOnDisk.value(i).size();
+
+            uint64_t fileSize = 0;
             a_t a;
-            catalog.append_lsbf((uint16_t) fileNamePath.length());
-            catalog.append(fileNamePath);
-            catalog.append_lsbf(fileSize);
-            a.offsetPos = catalog.length();
-            a.offset = baseOffset;
-            catalog.append_lsbf(baseOffset);
+            if(ver == VERSION_0_0) {
+                fileSize = filesOnDisk.value(i).size();
+
+                catalog.append_lsbf((uint16_t) fileNamePath.length());
+                catalog.append(fileNamePath);
+                catalog.append_lsbf(fileSize);
+                a.offsetPos = catalog.length();
+                a.offset = baseOffset;
+                catalog.append_lsbf(baseOffset);
+
+            } else if(ver == VERSION_0_1) {
+                uint64_t fileDateBirth = filesOnDisk.value(i).birthTime().toMSecsSinceEpoch();
+                uint64_t fileAttr = 0;
+                if(filesOnDisk.value(i).isDir()) {
+                    fileAttr |= 1;
+                } else {
+                    fileSize = filesOnDisk.value(i).size();
+                }
+                if(filesOnDisk.value(i).isHidden())
+                    fileAttr |= 2;
+
+                catalog.append_lsbf((uint16_t) fileNamePath.length());
+                catalog.append(fileNamePath);
+                catalog.append_lsbf(fileSize);
+                a.offsetPos = catalog.length();
+                a.offset = baseOffset;
+                catalog.append_lsbf(baseOffset);
+
+                catalog.append_lsbf(fileDateBirth);
+                catalog.append_lsbf(fileAttr);
+            }
+
             baseOffset += fileSize + blockSize - 1;
             baseOffset &= ~((uint64_t) blockSize - 1);
             fileOffsets.append(a);
@@ -87,20 +142,36 @@ public:
 
     int64_t search(uint64_t offset, const char * data, uint32_t len) {
         uint32_t pos = 0;
+
         while(pos < len) {
             if(searchState == 0) {
                 searchBuff.clear();
                 totalSize = 0;
                 pos &= ~(blockSize - 1);
-                if(memcmp(data + pos, signature.data(), signature.length())) {
+                bool signFound = false;
+                qsizetype signLen = 0;
+                qsizetype searchCatalogMinLen = 0;
+                if(!memcmp(data + pos, signature.data(), signature.length())) {
+                    signFound = true;
+                    ver = VERSION_0_0;
+                    signLen = signature.length();
+                    searchCatalogMinLen = signLen + 4 + 2 + 1 + 8 + 8 + 2;
+                } else if(!memcmp(data + pos, signature1.data(), signature1.length())) {
+                    signFound = true;
+                    ver = VERSION_0_1;
+                    signLen = signature1.length();
+                    searchCatalogMinLen = signLen + 4 + 2 + 1 + 8 + 8 + 8 + 8 + 2;
+                }
+                if(!signFound) {
                     pos += blockSize;
                     continue;
                 }
+
                 offsetOnTape = offset + pos;
                 filesOnTape.clear();
                 searchBuff.append(data + pos, len - pos);
-                searchCatalogLen = searchBuff.read_u32lsbf(signature.length());
-                if(searchCatalogLen < signature.length() + 4 + 2 + 1 + 8 + 8 + 2) {
+                searchCatalogLen = searchBuff.read_u32lsbf(signLen);
+                if(searchCatalogLen < searchCatalogMinLen) {
                     pos += blockSize;
                     continue;
                 }
@@ -126,23 +197,44 @@ public:
                 uint32_t c_pos = signature.length() + 4;
                 while(c_pos < searchBuff.length()) {
                     fileOnTape_t f;
-                    uint16_t c_name_len = searchBuff.read_u16lsbf(c_pos);
-                    if(c_name_len == 0)
-                        break;
-                    c_pos += 2;
-                    f.fileNamePath = QString::fromUtf8(searchBuff.data() + c_pos, c_name_len);
-                    c_pos += c_name_len;
-                    f.fileSize = searchBuff.read_u64lsbf(c_pos);
-                    c_pos += 8;
-                    f.offset = searchBuff.read_u64lsbf(c_pos);
-                    c_pos += 8;
+                    f.fileAttr = 0;
+                    f.fileDateBirth = 0;
+                    if(ver == VERSION_0_0) {
+                        uint16_t c_name_len = searchBuff.read_u16lsbf(c_pos);
+                        if(c_name_len == 0)
+                            break;
+                        c_pos += 2;
+                        f.fileNamePath = QString::fromUtf8(searchBuff.data() + c_pos, c_name_len);
+                        c_pos += c_name_len;
+                        f.fileSize = searchBuff.read_u64lsbf(c_pos);
+                        c_pos += 8;
+                        f.offset = searchBuff.read_u64lsbf(c_pos);
+                        c_pos += 8;
+                    } else if(ver == VERSION_0_1) {
+                        uint16_t c_name_len = searchBuff.read_u16lsbf(c_pos);
+                        if(c_name_len == 0)
+                            break;
+                        c_pos += 2;
+                        f.fileNamePath = QString::fromUtf8(searchBuff.data() + c_pos, c_name_len);
+                        c_pos += c_name_len;
+                        f.fileSize = searchBuff.read_u64lsbf(c_pos);
+                        c_pos += 8;
+                        f.offset = searchBuff.read_u64lsbf(c_pos);
+                        c_pos += 8;
+                        f.fileDateBirth = searchBuff.read_u64lsbf(c_pos);
+                        c_pos += 8;
+                        f.fileAttr = searchBuff.read_u64lsbf(c_pos);
+                        c_pos += 8;
+                    }
 
                     uint64_t fileSizeRounded = (uint64_t)(f.fileSize + blockSize - 1) & ~(uint64_t)(blockSize - 1);
                     if(totalSize < f.offset + fileSizeRounded) {
                         totalSize = f.offset + fileSizeRounded;
                     }
 
-                    filesOnTape.append(f);
+                    if((f.fileAttr & 1) == 0) {
+                        filesOnTape.append(f);
+                    }
                 }
                 return (int64_t) offsetOnTape;
             }
@@ -182,16 +274,20 @@ public:
         QString fileNamePath;
         uint64_t fileSize;
         uint64_t offset;
+        uint64_t fileDateBirth;
+        uint64_t fileAttr;
         bool skip;
     } fileOnTape_t;
     QList<fileOnTape_t> filesOnTape;
     uint64_t offsetOnTape = 0;
     uint64_t totalSize = 0;
+    Version_e ver = VERSION_0_0;
 
 private:
     uint64_t blockSize;
     QList<QFileInfo> filesOnDisk;
     const QByteArray signature = QString("my!tape!catalog!0.0").toLatin1();
+    const QByteArray signature1 = QString("my!tape!catalog!0.1").toLatin1();
 
     /*search*/
     int searchState = 0;

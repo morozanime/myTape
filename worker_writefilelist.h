@@ -91,7 +91,7 @@ protected:
                         }
                         catalog = new TapeCatalog(blockSize, filesToWrite);
                         catalog_serialized = catalog->serialize();
-                        emit CatalogReady((catalog->totalSize));
+                        emit CatalogReady(catalog->totalSize);
                     }
                 }
                 usleep(5000);
@@ -104,14 +104,14 @@ protected:
 
 private:
     void _add0(QString dir) {
-        QDirIterator * itFiles = new QDirIterator(dir, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+        QDirIterator * itFiles = new QDirIterator(dir, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Modified  | QDir::Hidden | QDir::System );
         while (itFiles->hasNext()) {
             itFiles->next();
             QFileInfo f = itFiles->fileInfo();
+            filesToWrite.append(f);
             if(f.isDir()) {
                 _add0(f.absoluteFilePath());
             } else {
-                filesToWrite.append(f);
                 emit AddFile(f.absoluteFilePath(), f.size());
             }
         }

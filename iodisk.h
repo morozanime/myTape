@@ -34,6 +34,10 @@ protected:
         while(restoreFileIndex < restoreCatalog->filesOnTape.length()) {
             TapeCatalog::fileOnTape_t f = restoreCatalog->filesOnTape.value(restoreFileIndex);
             emit log(1, "pos:" + QString::number(buffStart) + " offset:" + QString::number(f.offset) + " fileSize:" + QString::number(f.fileSize) + " n:" + QString::number(n) + " restoreFileIndex:" + QString::number(restoreFileIndex));
+            if(f.fileAttr & 1) {
+                restoreFileIndex++;
+                continue;
+            }
             if(restoreFileCurrent != nullptr) {
                 if(f.offset + f.fileSize > buffStart + n) {
                     emit log(1, "write full chunk ");
@@ -53,6 +57,7 @@ protected:
                 emit log(1, "create");
                 //create dirs
                 QString a0 = f.fileNamePath;
+                QDir root = QDir(restoreRootDir);
                 if(a0.contains(":/"))
                     a0 = f.fileNamePath.split(":/", Qt::SkipEmptyParts).last();
                 else if(a0.contains("//"))
@@ -62,7 +67,6 @@ protected:
                 a1.removeLast();
                 QString subPath = a1.join("/");
                 QString fullPathName = restoreRootDir + "/" + subPath + "/" + name;
-                QDir root = QDir(restoreRootDir);
                 if(!root.mkpath(subPath)) {
                     restoreFileIndex++;
                     continue;
@@ -102,6 +106,8 @@ protected:
             buff = malloc(ioTape->max_chunk_len);
         }
         QFileInfo info = filesToWrite.dequeue();
+        if(info.isDir())
+            return;
         QFile f(info.absoluteFilePath());
         if(info.size() == 0)
             return;
