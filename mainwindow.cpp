@@ -212,6 +212,7 @@ void MainWindow::ui_refresh()
         ui->labelRawCapacity->setText(QString::number(ioTape->mediaInfo.Capacity.QuadPart));
         ui->labelRawPartitionCount->setText(QString::number(ioTape->mediaInfo.PartitionCount));
         ui->labelRawWriteProtected->setText(ioTape->mediaInfo.WriteProtected ? "YES" : "NO");
+        ui->lineEditCache->setEnabled(false);
     } else {
         ui->pushButtonOpen->setText("Open");
 
@@ -228,6 +229,7 @@ void MainWindow::ui_refresh()
         ui->labelRawCapacity->setText("?");
         ui->labelRawPartitionCount->setText("?");
         ui->labelRawWriteProtected->setText("?");
+        ui->lineEditCache->setEnabled(true);
     }
 
     if(w_writeFileList->filesToWrite.isEmpty() || !ioTape->isOpened() || ioTape->mediaInfo.WriteProtected) {
@@ -260,7 +262,15 @@ void MainWindow::on_pushButtonOpen_clicked()
     if(ioTape->isOpened()) {
         ioTape->Close();
     } else {
-        ioTape->Open((QString("\\\\.\\") + ui->lineEditTapeDriveName->text()).toLatin1().data(), 256);
+        uint32_t cache = ui->lineEditCache->text().toUInt();
+        if(cache == 0)
+            cache = 256;
+        else if(cache < 32)
+            cache = 32;
+        else if(cache > 8192)
+            cache = 8192;
+        ui->lineEditCache->setText(QString::number(cache));
+        ioTape->Open((QString("\\\\.\\") + ui->lineEditTapeDriveName->text()).toLatin1().data(), cache);
     }
 
     ui_refresh();
