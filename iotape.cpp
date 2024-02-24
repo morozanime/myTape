@@ -18,27 +18,37 @@ static HANDLE _cfw(const char * s) {
 int IOTape::Open(const char * device, int buffLen) {
     int err = -1;
     Close();
+    memset(&mediaInfo, 0, sizeof(mediaInfo));
+    memset(&driveInfo, 0, sizeof(driveInfo));
     do {
         if(buffLen < 1)
             buffLen = 1;
-        else if(buffLen > 1024)
-            buffLen = 1024;
         writeCacheSizeMax = buffLen * 1024 * 1024;
-        hTape = _cfw(device);
-        if(hTape == INVALID_HANDLE_VALUE)
-            break;
+        if(strcmp(device, "\\\\.\\null")) {
+            nullTape = false;
+            hTape = _cfw(device);
+            if(hTape == INVALID_HANDLE_VALUE)
+                break;
 
-        memset(&mediaInfo, 0, sizeof(mediaInfo));
-        memset(&driveInfo, 0, sizeof(driveInfo));
+            DWORD lpdwSize;
+            lpdwSize = sizeof(driveInfo);
+            GetTapeParameters(hTape, GET_TAPE_DRIVE_INFORMATION, &lpdwSize, &driveInfo);
+            lpdwSize = sizeof(mediaInfo);
+            GetTapeParameters(hTape, GET_TAPE_MEDIA_INFORMATION, &lpdwSize, &mediaInfo);
 
-        DWORD lpdwSize;
-        lpdwSize = sizeof(driveInfo);
-        GetTapeParameters(hTape, GET_TAPE_DRIVE_INFORMATION, &lpdwSize, &driveInfo);
-        lpdwSize = sizeof(mediaInfo);
-        GetTapeParameters(hTape, GET_TAPE_MEDIA_INFORMATION, &lpdwSize, &mediaInfo);
+            GetPosition();
+        } else {
+            nullTape = true;
+            mediaInfo.BlockSize = 512;
+            mediaInfo.Capacity.HighPart = 256;
+            mediaInfo.Capacity.LowPart = 0;
+            mediaInfo.PartitionCount = 1;
+            mediaInfo.Remaining.HighPart = mediaInfo.Capacity.HighPart;
+            mediaInfo.Remaining.LowPart = mediaInfo.Capacity.LowPart;
+            mediaInfo.WriteProtected = false;
 
-        GetPosition();
-
+            mediaPositionBytes = 0;
+        }
         err = 0;
     } while(0);
     return err;
@@ -49,6 +59,7 @@ void IOTape::Close(void) {
         CloseHandle(hTape);
         hTape = INVALID_HANDLE_VALUE;
     }
+    nullTape = false;
 }
 
 int IOTape::_io_read_blocking(void * dest, uint32_t len) {
@@ -85,10 +96,12 @@ int IOTape::_io_write_blocking(void * src, uint32_t len) {
     f.write((const char*) src, len);
     f.close();
 #else   /*TAPE_EMULATION_FILE*/
-    DWORD n1 = 0;
-    BOOL result = WriteFile(hTape, src, len, &n1, NULL);
-    if(!result || n1 != len) {
-        return -1;
+    if(!nullTape) {
+        DWORD n1 = 0;
+        BOOL result = WriteFile(hTape, src, len, &n1, NULL);
+        if(!result || n1 != len) {
+            return -1;
+        }
     }
 #endif  /*TAPE_EMULATION_FILE*/
     return 0;
@@ -98,12 +111,14 @@ int IOTape::_io_seek_blocking(uint64_t pos) {
     pos /= this->mediaInfo.BlockSize;
 #ifdef  TAPE_EMULATION_FILE
 #else   /*TAPE_EMULATION_FILE*/
-    DWORD dwOffsetLow = (DWORD) pos;
-    DWORD dwOffsetHigh = (DWORD) (pos >> 32);
+    if(!nullTape) {
+        DWORD dwOffsetLow = (DWORD) pos;
+        DWORD dwOffsetHigh = (DWORD) (pos >> 32);
 
-    DWORD result = SetTapePosition(hTape, TAPE_ABSOLUTE_BLOCK, 0, dwOffsetLow, dwOffsetHigh, FALSE);
-    if(result != NO_ERROR) {
-        return -1;
+        DWORD result = SetTapePosition(hTape, TAPE_ABSOLUTE_BLOCK, 0, dwOffsetLow, dwOffsetHigh, FALSE);
+        if(result != NO_ERROR) {
+            return -1;
+        }
     }
 #endif  /*TAPE_EMULATION_FILE*/
     mediaPositionBytes = pos * this->mediaInfo.BlockSize;

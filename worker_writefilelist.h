@@ -62,7 +62,7 @@ signals:
     void AddFile(QString path, qint64 size);
     void CatalogReady(qint64 total_size);
     void Clear(void);
-    void progress(int iTotal, int nTotal, double percent);
+    void progress(int iTotal, int nTotal, double percent, QString str);
 
 protected:
     void run(void) {

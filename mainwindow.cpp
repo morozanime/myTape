@@ -157,7 +157,12 @@ void MainWindow::on_pushButtonWriteWrite_clicked()
     ioTape->Command(IOTape::CMD_WRITE, w_writeFileList->catalog->totalSize);
 }
 
-void MainWindow::progress(int i, int n, double percent) {
+void MainWindow::progress(int i, int n, double percent, QString str) {
+    static clock_t t0 = 0;
+    clock_t t1 = clock();
+    if((t1 - t0) < 100) return;
+    t0 = t1;
+
     static QElapsedTimer timer;
     qint64 timeRemaining = 0;
     static qint64 timeElapsed = 0;
@@ -176,13 +181,13 @@ void MainWindow::progress(int i, int n, double percent) {
         eta_str += QString("%1").arg(timeElapsed % 60, 2, 10, QChar('0'));
     }
     if(percent < 99.999999) {
-        eta_str += ", Remaining ";
+        eta_str += "/";
         eta_str += QString("%1:").arg(timeRemaining / 3600, 2, 10, QChar('0'));
         eta_str += QString("%1:").arg((timeRemaining / 60) % 60, 2, 10, QChar('0'));
         eta_str += QString("%1").arg(timeRemaining % 60, 2, 10, QChar('0'));
     }
 
-    ui->statusbar->showMessage(QString::number(i) + "/" + QString::number(n) + " " + QString("%1%").arg(percent, 6, 'f', 2, ' ') + eta_str);
+    ui->statusbar->showMessage(QString::number(i) + "/" + QString::number(n) + " " + QString("%1%").arg(percent, 6, 'f', 2, ' ') + eta_str + " " + str);
 }
 
 void MainWindow::ui_refresh()
@@ -267,8 +272,6 @@ void MainWindow::on_pushButtonOpen_clicked()
             cache = 256;
         else if(cache < 32)
             cache = 32;
-        else if(cache > 8192)
-            cache = 8192;
         ui->lineEditCache->setText(QString::number(cache));
         ioTape->Open((QString("\\\\.\\") + ui->lineEditTapeDriveName->text()).toLatin1().data(), cache);
     }
@@ -322,6 +325,10 @@ void MainWindow::catalog_readed(TapeCatalog * catalog) {
 
 void MainWindow::change_pos(void) {
     if(ioTape->mediaInfo.Capacity.QuadPart > 0) {
+        static clock_t t0 = 0;
+        clock_t t1 = clock();
+        if((t1 - t0) < 100) return;
+        t0 = t1;
         QString a = QString::number(ioTape->mediaPositionBytes);
         a += " / ";
         a += QString::number(ioTape->mediaInfo.Capacity.QuadPart);
@@ -332,7 +339,7 @@ void MainWindow::change_pos(void) {
     }
 }
 
-void MainWindow::error_message(QString message){
+void MainWindow::error_message(QString message) {
     QMessageBox::critical(this, "Error", message);
 }
 
@@ -374,6 +381,10 @@ void MainWindow::log(int level, QString message) {
 }
 
 void MainWindow::change_cache(uint64_t size) {
+    static clock_t t0 = 0;
+    clock_t t1 = clock();
+    if((t1 - t0) < 100) return;
+    t0 = t1;
     ui->labelCache->setText(psize(size));
 }
 

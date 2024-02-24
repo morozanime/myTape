@@ -73,11 +73,15 @@ protected:
                     Chunk_t c;
                     c.len = (uint32_t)(_remaining_bytes > max_chunk_len ? max_chunk_len : _remaining_bytes);
                     c.data = malloc(c.len);
+                    if(c.data == nullptr) {
+                        usleep(5000);
+                        continue;
+                    }
                     c.positionBytes = mediaPositionBytes;
                     if(_io_read_blocking(c.data, c.len)) {
                         free(c.data);
                         state = TAPE_ERROR;
-                        emit error_signal(QString::number(mediaPositionBytes / mediaInfo.BlockSize) + " Tape loading error");
+                        emit error_signal(QString::number(mediaPositionBytes) + " Tape loading error");
                         break;
                     }
                     qRead.enqueue(c);
@@ -97,12 +101,16 @@ protected:
                     Chunk_t c;
                     c.len = max_chunk_len;
                     c.data = malloc(c.len);
+                    if(c.data == nullptr) {
+                        usleep(5000);
+                        continue;
+                    }
                     c.positionBytes = mediaPositionBytes;
 
                     if(_io_read_blocking(c.data, c.len)) {
                         free(c.data);
                         state = TAPE_ERROR;
-                        emit error_signal(QString::number(mediaPositionBytes / mediaInfo.BlockSize) + " Tape loading error");
+                        emit error_signal(QString::number(mediaPositionBytes) + " Tape loading error");
                         break;
                     }
                     if(tapeCatalog->search(c.positionBytes, (const char*) c.data, c.len) >= 0) {
@@ -112,7 +120,6 @@ protected:
                         emit catalog_readed(tapeCatalog);
                         mediaPositionBytes += c.len;
                     } else {
-
                         mediaPositionBytes += c.len;
                         emit progress(iTotal, nTotal, (double) (mediaPositionBytes * 100) / mediaInfo.Capacity.QuadPart);
                     }
@@ -128,27 +135,29 @@ protected:
                 if(_remaining_bytes > 0) {
                     if(!qWrite.isEmpty()) {
                         Chunk_t c = qWrite.dequeue();
-                        if(_io_write_blocking(c.data, c.len)) {
-                            state = TAPE_ERROR;
-                            emit error_signal(QString::number(mediaPositionBytes / mediaInfo.BlockSize) + " Tape writing error");
-                        } else {
-                            mediaPositionBytes += c.len;
-                            emit change_pos();
-                            qWriteTotalBytesGet += c.len;
-                            if(qWriteBytes < c.len) {
-                                qWriteBytes = 0;
+                        if(_cmd_abort == cmd_abort) {
+                            if(_io_write_blocking(c.data, c.len)) {
+                                state = TAPE_ERROR;
+                                emit error_signal(QString::number(mediaPositionBytes / mediaInfo.BlockSize) + " Tape writing error");
                             } else {
-                                qWriteBytes -= c.len;
+                                mediaPositionBytes += c.len;
+                                emit change_pos();
+                                qWriteTotalBytesGet += c.len;
+                                if(qWriteBytes < c.len) {
+                                    qWriteBytes = 0;
+                                } else {
+                                    qWriteBytes -= c.len;
+                                }
+                                emit change_cache(qWriteBytes);
+                                if(_remaining_bytes <= c.len) {
+                                    _remaining_bytes = 0;
+                                } else {
+                                    _remaining_bytes -= c.len;
+                                }
+                                emit progress(iTotal, nTotal, (double)(_total_bytes - _remaining_bytes) / _total_bytes * 100, c.afp);
                             }
-                            emit change_cache(qWriteBytes);
-                            if(_remaining_bytes <= c.len) {
-                                _remaining_bytes = 0;
-                            } else {
-                                _remaining_bytes -= c.len;
-                            }
-                            emit progress(iTotal, nTotal, (double)(_total_bytes - _remaining_bytes) / _total_bytes * 100);
-                        }
 //                        emit log(0, QString("free %1").arg((uint64_t) c.data, 16, 16, QChar('0')));
+                        }
                         free(c.data);
                     }
                 } else {
@@ -176,6 +185,7 @@ public:
         memset(&mediaInfo, 0, sizeof(mediaInfo));
         memset(&driveInfo, 0, sizeof(driveInfo));
         mediaPositionBytes = 0;
+        nullTape = false;
     }
 
     ~IOTape() {
@@ -231,7 +241,7 @@ public:
         command.enqueue(c);
     }
 
-    int Write(void * data, uint32_t len) {
+    int Write(void * data, uint32_t len, QString afp) {
         uint32_t writeCacheSize = qWriteTotalBytesPut - qWriteTotalBytesGet;
         if((uint64_t) writeCacheSize + len > (uint64_t) writeCacheSizeMax) {
             return 1;
@@ -244,6 +254,7 @@ public:
         }
         c.len = len;
         memcpy(c.data, data, c.len);
+        c.afp = afp;
         qWrite.enqueue(c);
         qWriteBytes += c.len;
         qWriteTotalBytesPut += len;
@@ -274,14 +285,18 @@ public:
     }
 
     bool isOpened(void) {
-        return hTape != INVALID_HANDLE_VALUE;
+        if(nullTape) {
+            return true;
+        } else {
+            return hTape != INVALID_HANDLE_VALUE;
+        }
     }
 
     uint64_t RoundUp(uint64_t size) {
         return (uint64_t)(size + mediaInfo.BlockSize - 1) & ~(uint64_t)(mediaInfo.BlockSize - 1);
     }
 
-    uint32_t max_chunk_len = 1024 * 1024;
+    uint32_t max_chunk_len = 4 * 1024 * 1024;
     uint32_t writeCacheSizeMax = 256 * 1024 * 1024;
 
     TAPE_GET_MEDIA_PARAMETERS mediaInfo;
@@ -292,18 +307,20 @@ public:
     uint64_t GetPosition(void) {
 #ifdef  TAPE_EMULATION_FILE
 #else   /*TAPE_EMULATION_FILE*/
-        DWORD dwPartition = 0;
-        DWORD dwOffsetLow = 0;
-        DWORD dwOffsetHigh = 0;
-        GetTapePosition(hTape, TAPE_ABSOLUTE_POSITION, &dwPartition, &dwOffsetLow, &dwOffsetHigh);
+        if(!nullTape) {
+            DWORD dwPartition = 0;
+            DWORD dwOffsetLow = 0;
+            DWORD dwOffsetHigh = 0;
+            GetTapePosition(hTape, TAPE_ABSOLUTE_POSITION, &dwPartition, &dwOffsetLow, &dwOffsetHigh);
 
-        mediaPositionBytes = (((uint64_t) dwOffsetHigh << 32) | dwOffsetLow) * mediaInfo.BlockSize;
+            mediaPositionBytes = (((uint64_t) dwOffsetHigh << 32) | dwOffsetLow) * mediaInfo.BlockSize;
+        }
 #endif  /*TAPE_EMULATION_FILE*/
         return mediaPositionBytes;
     }
 
 signals:
-    void progress(int iTotal, int nTotal, double percent);
+    void progress(int iTotal, int nTotal, double percent, QString str = "");
     void catalog_readed(TapeCatalog * catalog);
     void change_pos(void);
     void error_signal(QString message);
@@ -312,11 +329,13 @@ signals:
 
 private:
     HANDLE hTape = INVALID_HANDLE_VALUE;
+    bool nullTape = false;
 
     typedef struct {
         void * data;
         uint32_t len;
         uint64_t positionBytes;
+        QString afp;
     } Chunk_t;
 
     QAsyncQueue<Chunk_t> qRead;

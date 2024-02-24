@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QThread>
 #include <QDir>
+#include <QElapsedTimer>
 #include "iotape.h"
 
 class IODisk : public QThread
@@ -25,6 +26,10 @@ protected:
         }
         if(buff == nullptr) {
             buff = malloc(ioTape->max_chunk_len);
+            if(buff == nullptr) {
+                usleep(5000);
+                return;
+            }
         }
         uint32_t n = 0;
         uint64_t buffStart = 0;
@@ -74,7 +79,7 @@ protected:
                 //open file
                 emit log(1, fullPathName);
                 restoreFileCurrent = new QFile(fullPathName);
-                if(!restoreFileCurrent->open(QFile::OpenModeFlag::WriteOnly | QFile::OpenModeFlag::Truncate | QFile::OpenModeFlag::Unbuffered)) {
+                if(!restoreFileCurrent->open(QFile::OpenModeFlag::WriteOnly | QFile::OpenModeFlag::Truncate/* | QFile::OpenModeFlag::Unbuffered*/)) {
                     restoreFileCurrent = nullptr;
                     restoreFileIndex++;
                     continue;
@@ -102,19 +107,43 @@ protected:
 
     inline void process_backup()
     {
+        QElapsedTimer timer;
+
         if(buff == nullptr) {
             buff = malloc(ioTape->max_chunk_len);
+            if(buff == nullptr) {
+                usleep(5000);
+                return;
+            }
         }
+
+        timer.start();
+
         QFileInfo info = filesToWrite.dequeue();
         if(info.isDir())
             return;
-        QFile f(info.absoluteFilePath());
+        QString afp = info.absoluteFilePath();
+        QFile f(afp);
         if(info.size() == 0)
             return;
-        if(f.open(QFile::OpenModeFlag::ReadOnly | QFile::OpenModeFlag::Unbuffered)) {
+
+        timers_ms[0] += timer.nsecsElapsed();
+        timer.start();
+
+        if(f.open(QFile::OpenModeFlag::ReadOnly/* | QFile::OpenModeFlag::Unbuffered*/)) {
+            timers_ms[5]++;
+
+            timers_ms[1] += timer.nsecsElapsed();
+            timer.start();
+
             qint64 fileSizeCounter = 0;
             do {
                 uint64_t n0 = f.read((char*)buff, ioTape->max_chunk_len);
+                timers_ms[6] += n0;
+
+                timers_ms[2] += timer.nsecsElapsed();
+                timer.start();
+
                 if(n0 == 0)
                     break;
                 fileSizeCounter += n0;
@@ -124,21 +153,28 @@ protected:
                     memset((uint8_t*)buff + n0, 0, n - n0);
                 int res = 0;
                 while(!cmd_flush) {
-                    res = ioTape->Write(buff, n);
+                    timers_ms[3] += timer.nsecsElapsed();
+                    timer.start();
+
+                    res = ioTape->Write(buff, n, afp);
+                    timers_ms[4] += timer.nsecsElapsed();
+                    timer.start();
+
                     if(res == 0) {
                         break;
                     }
                     usleep(5000);
                 }
             } while(!cmd_flush);
+            f.close();
             if(!cmd_flush && fileSizeCounter != info.size()) {
-                cmd_flush = 1;
-                emit error_signal(info.absoluteFilePath() + " reading error at " + QString::number(fileSizeCounter) + "/" + QString::number(info.size()));
+                cmd_flush = true;
+                emit error_signal(afp + " reading error at " + QString::number(fileSizeCounter) + "/" + QString::number(info.size()));
                 return;
             }
         } else {
-            cmd_flush = 1;
-            emit error_signal(info.absoluteFilePath() + " open error");
+            cmd_flush = true;
+            emit error_signal(afp + " open error");
             return;
         }
 }
@@ -147,6 +183,10 @@ protected:
     {
         if(buff == nullptr) {
             buff = malloc(ioTape->max_chunk_len);
+            if(buff == nullptr) {
+                usleep(5000);
+                return;
+            }
         }
         uint32_t n = 0;
         if(ioTape->Read(buff, &n, nullptr) == 0 && n > 0) {
@@ -167,6 +207,10 @@ protected:
     void run(void) {
         while(true) {
             if(cmd_flush) {
+                emit log(0, QString("-------------------"));
+                for(int i = 0; i < 10; i++){
+                    emit log(0, QString::number(timers_ms[i]));
+                }
                 filesToWrite.clear();
                 cmd_flush = false;
             }
@@ -216,7 +260,7 @@ public:
             rawFile = new QFile(fn);
             if(rawFile == nullptr)
                 break;
-            if(!rawFile->open(QFile::OpenModeFlag::WriteOnly | QFile::OpenModeFlag::Unbuffered))
+            if(!rawFile->open(QFile::OpenModeFlag::WriteOnly/* | QFile::OpenModeFlag::Unbuffered*/))
                 break;
             rawFileSize = len;
             rawFileWritten = 0;
@@ -259,6 +303,8 @@ public:
             }
         }
     }
+
+    qint64 timers_ms[10] = { 0 };
 
 signals:
     void error_signal(QString message);

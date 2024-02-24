@@ -20,7 +20,7 @@ public:
     ~MainWindow();
 
 public slots:
-    void progress(int i, int n, double percent);
+    void progress(int i, int n, double percent, QString str);
     void catalog_readed(TapeCatalog * catalog);
     void change_pos(void);
     void error_message(QString message);
