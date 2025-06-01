@@ -36,7 +36,17 @@ int IOTape::Open(const char * device, int buffLen) {
             lpdwSize = sizeof(mediaInfo);
             GetTapeParameters(hTape, GET_TAPE_MEDIA_INFORMATION, &lpdwSize, &mediaInfo);
 
+            if(mediaInfo.BlockSize == 0) {
+                mediaInfo.BlockSize = driveInfo.DefaultBlockSize;
+                TAPE_SET_MEDIA_PARAMETERS mediaSet;
+                mediaSet.BlockSize = mediaInfo.BlockSize;
+                SetTapeParameters(hTape, SET_TAPE_MEDIA_INFORMATION, &mediaSet);
+            }
+
             GetPosition();
+            tapeStatus = GetTapeStatus(hTape);
+            emit status(tapeStatus);
+
         } else {
             nullTape = true;
             mediaInfo.BlockSize = 512;

@@ -15,14 +15,29 @@ class IOTape : public QThread
 protected:
     void run(void) {
         while(true) {
-            switch(state) {
-            case TAPE_IDLE:
-                if(_cmd_abort != cmd_abort) {
-                    _cmd_abort = cmd_abort;
-                    command.clear();
-                    Flush();
-                    break;
-                }
+            if(hTape == INVALID_HANDLE_VALUE) {
+                usleep(200000UL);
+                tapeStatus = 8888;
+                emit status(tapeStatus);
+                continue;
+            }
+            DWORD st = GetTapeStatus(hTape);
+            if(st != tapeStatus) {
+                emit status(st);
+                tapeStatus = st;
+            }
+            if(tapeStatus != 0) {
+                usleep(200000UL);
+                continue;
+            }
+            if(_cmd_abort != cmd_abort) {
+                _cmd_abort = cmd_abort;
+                command.clear();
+                Flush();
+                usleep(200000UL);
+                continue;
+            }
+            if(state == TAPE_IDLE) {
                 if(!command.isEmpty()) {
                     Command_t c = command.dequeue();
                     switch(c.cmd) {
@@ -61,11 +76,10 @@ protected:
                         emit progress(iTotal, nTotal, 100);
                         break;
                     }
-                    break;
+                } else {
+                    usleep(50000);
                 }
-                usleep(5000);
-                break;
-            case TAPE_READ:
+            } else if(state == TAPE_READ) {
                 if(_remaining_bytes > 0) {
                     if(qReadBytes >= writeCacheSizeMax) {
                         continue;
@@ -82,7 +96,8 @@ protected:
                         free(c.data);
                         state = TAPE_ERROR;
                         emit error_signal(QString::number(mediaPositionBytes) + " Tape loading error");
-                        break;
+                        usleep(5000);
+                        continue;
                     }
                     qRead.enqueue(c);
                     mediaPositionBytes += c.len;
@@ -93,16 +108,15 @@ protected:
                     iTotal++;
                     emit progress(iTotal, nTotal, 100);
                     state = TAPE_IDLE;
-                    break;
+                    continue;
                 }
-                break;
-            case TAPE_SCAN:
+            } else if(state == TAPE_SCAN) {
                 if(_cmd_abort == cmd_abort) {
                     Chunk_t c;
                     c.len = max_chunk_len;
                     c.data = malloc(c.len);
                     if(c.data == nullptr) {
-                        usleep(5000);
+                        usleep(50000);
                         continue;
                     }
                     c.positionBytes = mediaPositionBytes;
@@ -111,7 +125,8 @@ protected:
                         free(c.data);
                         state = TAPE_ERROR;
                         emit error_signal(QString::number(mediaPositionBytes) + " Tape loading error");
-                        break;
+                        usleep(50000);
+                        continue;
                     }
                     if(tapeCatalog->search(c.positionBytes, (const char*) c.data, c.len) >= 0) {
                         iTotal++;
@@ -130,8 +145,7 @@ protected:
                     tapeCatalog = nullptr;
                     state = TAPE_IDLE;
                 }
-                break;
-            case TAPE_WRITE:
+            } else if(state == TAPE_WRITE) {
                 if(_remaining_bytes > 0) {
                     if(!qWrite.isEmpty()) {
                         Chunk_t c = qWrite.dequeue();
@@ -157,6 +171,10 @@ protected:
                                 emit progress(iTotal, nTotal, (double)(_total_bytes - _remaining_bytes) / _total_bytes * 100, c.afp);
                             }
 //                        emit log(0, QString("free %1").arg((uint64_t) c.data, 16, 16, QChar('0')));
+                        } else {
+                            _cmd_abort = cmd_abort;
+                            command.clear();
+                            state = TAPE_IDLE;
                         }
                         free(c.data);
                     }
@@ -165,17 +183,14 @@ protected:
                     emit progress(iTotal, nTotal, 100);
                     state = TAPE_IDLE;
                 }
-                break;
-            case TAPE_ERROR:
+            } else if(state == TAPE_ERROR) {
                 cmd_abort++;
-                break;
-            default:
+                continue;
+            } else {
                 if(_cmd_abort != cmd_abort) {
                     _cmd_abort = cmd_abort;
                     command.clear();
-                    break;
                 }
-                break;
             }
         }
     }
@@ -326,10 +341,12 @@ signals:
     void error_signal(QString message);
     void change_cache(uint64_t size);
     void log(int level, QString message);
+    void status(DWORD tapeStatus);
 
 private:
     HANDLE hTape = INVALID_HANDLE_VALUE;
     bool nullTape = false;
+    DWORD tapeStatus = 99999999UL;
 
     typedef struct {
         void * data;

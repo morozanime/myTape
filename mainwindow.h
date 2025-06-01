@@ -29,6 +29,7 @@ public slots:
     void worker_writefilelist_AddFile(QString path, qint64 size);
     void worker_writefilelist_CatalogReady(qint64 total_size);
     void worker_writefilelist_Clear(void);
+    void tapeStatus(DWORD st);
 
 private slots:
     void on_pushButtonWriteAddFile_clicked();

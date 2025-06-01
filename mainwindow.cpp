@@ -40,6 +40,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ioTape, &IOTape::change_cache, this, &MainWindow::change_cache);
     connect(ioTape, &IOTape::log, this, &MainWindow::log);
     connect(ioDisk, &IODisk::log, this, &MainWindow::log);
+    connect(ioTape, &IOTape::status, this, &MainWindow::tapeStatus);
     connect(w_writeFileList, &Worker_WriteFileList::AddFile, this, &MainWindow::worker_writefilelist_AddFile);
     connect(w_writeFileList, &Worker_WriteFileList::CatalogReady, this, &MainWindow::worker_writefilelist_CatalogReady);
     connect(w_writeFileList, &Worker_WriteFileList::Clear, this, &MainWindow::worker_writefilelist_Clear);
@@ -337,6 +338,10 @@ void MainWindow::change_pos(void) {
     } else {
         ui->labelPos->setText("No tape");
     }
+}
+
+void MainWindow::tapeStatus(DWORD st) {
+    ui->label_state->setText(QString::number((uint32_t) st));
 }
 
 void MainWindow::error_message(QString message) {
