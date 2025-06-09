@@ -11,7 +11,7 @@ static HANDLE _cfw(const char * s) {
     delete[] portNameW;
     return handle;
 #else   /*WIN64*/
-    return CreateFile(s, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    return CreateFileA(s, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
 #endif  /*WIN64*/
 }
 
@@ -27,8 +27,10 @@ int IOTape::Open(const char * device, int buffLen) {
         if(strcmp(device, "\\\\.\\null")) {
             nullTape = false;
             hTape = _cfw(device);
-            if(hTape == INVALID_HANDLE_VALUE)
+            if(hTape == INVALID_HANDLE_VALUE){
+                emit log(0, "Open error:" + QString::number(GetLastError()));
                 break;
+            }
 
             DWORD lpdwSize;
             lpdwSize = sizeof(driveInfo);

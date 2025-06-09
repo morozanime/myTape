@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QFile>
 #include <QByteArray>
+#include <QDateTime>
 #include "myqbytearray.h"
 
 class TapeCatalog
@@ -150,7 +151,7 @@ public:
                 pos &= ~(blockSize - 1);
                 bool signFound = false;
                 qsizetype signLen = 0;
-                qsizetype searchCatalogMinLen = 0;
+                uint32_t searchCatalogMinLen = 0;
                 if(!memcmp(data + pos, signature.data(), signature.length())) {
                     signFound = true;
                     ver = VERSION_0_0;
@@ -175,7 +176,7 @@ public:
                     pos += blockSize;
                     continue;
                 }
-                if(searchCatalogLen > searchBuff.length()) {
+                if(searchCatalogLen > (uint32_t) searchBuff.length()) {
                     searchState = 1;
                     break;
                 }
@@ -187,7 +188,7 @@ public:
                 if(l > searchCatalogLen - searchBuff.length())
                     l = searchCatalogLen - searchBuff.length();
                 searchBuff.append(data, l);
-                if(searchCatalogLen > searchBuff.length()) {
+                if(searchCatalogLen > (uint32_t) searchBuff.length()) {
                     break;
                 }
                 searchState = 2;
@@ -195,7 +196,7 @@ public:
             }
             if(searchState == 2) {
                 uint32_t c_pos = signature.length() + 4;
-                while(c_pos < searchBuff.length()) {
+                while(c_pos < (uint32_t) searchBuff.length()) {
                     fileOnTape_t f;
                     f.fileAttr = 0;
                     f.fileDateBirth = 0;

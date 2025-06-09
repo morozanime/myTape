@@ -20,11 +20,12 @@ public:
     ~MainWindow();
 
 public slots:
-    void progress(int i, int n, double percent, QString str);
+    void progress1(double percent, quint64 bytes/*, QString str*/);
+    void progress(double percent, QString str, quint64 bytes, bool force = false);
     void catalog_readed(TapeCatalog * catalog);
-    void change_pos(void);
+    void change_pos(bool force = false);
     void error_message(QString message);
-    void change_cache(uint64_t size);
+    void change_cache(quint64 size);
     void log(int level, QString message);
     void worker_writefilelist_AddFile(QString path, qint64 size);
     void worker_writefilelist_CatalogReady(qint64 total_size);

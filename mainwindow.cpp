@@ -33,7 +33,6 @@ MainWindow::MainWindow(QWidget *parent)
     ioDisk = new IODisk(ioTape);
     w_writeFileList = new Worker_WriteFileList();
 
-    connect(ioTape, &IOTape::progress, this, &MainWindow::progress);
     connect(ioTape, &IOTape::catalog_readed, this, &MainWindow::catalog_readed);
     connect(ioTape, &IOTape::change_pos, this, &MainWindow::change_pos);
     connect(ioTape, &IOTape::error_signal, this, &MainWindow::error_message);
@@ -45,6 +44,12 @@ MainWindow::MainWindow(QWidget *parent)
     connect(w_writeFileList, &Worker_WriteFileList::CatalogReady, this, &MainWindow::worker_writefilelist_CatalogReady);
     connect(w_writeFileList, &Worker_WriteFileList::Clear, this, &MainWindow::worker_writefilelist_Clear);
     connect(w_writeFileList, &Worker_WriteFileList::progress, this, &MainWindow::progress);
+    connect(ioTape, &IOTape::progress1, this, &MainWindow::progress1);
+    bool result = connect(ioTape, &IOTape::progress, this, &MainWindow::progress);
+    if(!result) {
+        error_message("Connection error");
+    }
+//    emit ioTape->progress(7,7,77,"77",7777);
     ioTape->start();
     ioDisk->start();
 
@@ -158,11 +163,31 @@ void MainWindow::on_pushButtonWriteWrite_clicked()
     ioTape->Command(IOTape::CMD_WRITE, w_writeFileList->catalog->totalSize);
 }
 
-void MainWindow::progress(int i, int n, double percent, QString str) {
+void MainWindow::progress1(double percent, quint64 bytes/*, QString str*/) {
+    QString message = QString::number(percent) + "/" + QString::number(bytes) + "/";
+    ui->statusbar->showMessage(message);
+}
+
+
+void MainWindow::progress(double percent, QString str, quint64 bytes, bool force) {
+//    log(5, str);
     static clock_t t0 = 0;
     clock_t t1 = clock();
-    if((t1 - t0) < 100) return;
+    if((t1 - t0) < 100 && !force) return;
     t0 = t1;
+
+    static clock_t t00 = 0;
+    static quint64 bytes00 = 0;
+    static int bytes_per_second = 0;
+    if(bytes == 0 || bytes < bytes00) {
+        bytes00 = bytes;
+        bytes_per_second = 0;
+        t00 = t1;
+    } else if (t1 - t00 >= 1000) {
+        bytes_per_second = (int)((bytes - bytes00) * 1000 / (t1 - t00));
+        bytes00 = bytes;
+        t00 = t1;
+    }
 
     static QElapsedTimer timer;
     qint64 timeRemaining = 0;
@@ -188,7 +213,8 @@ void MainWindow::progress(int i, int n, double percent, QString str) {
         eta_str += QString("%1").arg(timeRemaining % 60, 2, 10, QChar('0'));
     }
 
-    ui->statusbar->showMessage(QString::number(i) + "/" + QString::number(n) + " " + QString("%1%").arg(percent, 6, 'f', 2, ' ') + eta_str + " " + str);
+    QString message = QString::number(bytes_per_second / 1024) + " kB/s " + QString("%1%").arg(percent, 6, 'f', 2, ' ') + eta_str + " " + str;
+    ui->statusbar->showMessage(message);
 }
 
 void MainWindow::ui_refresh()
@@ -196,7 +222,7 @@ void MainWindow::ui_refresh()
     if(ioTape->isOpened()) {
         ui->pushButtonOpen->setText("Close");
         ui->labelBlock->setText(psize(ioTape->mediaInfo.BlockSize));
-        change_pos();
+        change_pos(true);
         if(ioTape->mediaInfo.Capacity.QuadPart > 0) {
             ui->labelFree->setText(psize(ioTape->mediaInfo.Remaining.QuadPart) + " (" + QString::number(ioTape->mediaInfo.Remaining.QuadPart * 100 / ioTape->mediaInfo.Capacity.QuadPart) + "%)");
         }
@@ -324,11 +350,11 @@ void MainWindow::catalog_readed(TapeCatalog * catalog) {
     ui_refresh();
 }
 
-void MainWindow::change_pos(void) {
+void MainWindow::change_pos(bool force) {
     if(ioTape->mediaInfo.Capacity.QuadPart > 0) {
         static clock_t t0 = 0;
         clock_t t1 = clock();
-        if((t1 - t0) < 100) return;
+        if((t1 - t0) < 100 && !force) return;
         t0 = t1;
         QString a = QString::number(ioTape->mediaPositionBytes);
         a += " / ";
@@ -385,7 +411,7 @@ void MainWindow::log(int level, QString message) {
     }
 }
 
-void MainWindow::change_cache(uint64_t size) {
+void MainWindow::change_cache(quint64 size) {
     static clock_t t0 = 0;
     clock_t t1 = clock();
     if((t1 - t0) < 100) return;

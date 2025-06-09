@@ -208,9 +208,6 @@ protected:
         while(true) {
             if(cmd_flush) {
                 emit log(0, QString("-------------------"));
-                for(int i = 0; i < 10; i++){
-                    emit log(0, QString::number(timers_ms[i]));
-                }
                 filesToWrite.clear();
                 cmd_flush = false;
             }
