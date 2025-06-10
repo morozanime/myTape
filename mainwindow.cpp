@@ -125,6 +125,10 @@ void MainWindow::on_pushButtonWriteClear_clicked()
 
 void MainWindow::on_pushButtonWriteWrite_clicked()
 {
+    if(!ioTape->isOpened() || ioTape->mediaInfo.BlockSize == 0) {
+        return;
+    }
+
     if(ioTape->GetState() != IOTape::TAPE_IDLE) {
         QMessageBox::critical(this, "Error", "Tape is busy");
         return;
@@ -367,7 +371,12 @@ void MainWindow::change_pos(bool force) {
 }
 
 void MainWindow::tapeStatus(DWORD st) {
-    ui->label_state->setText(QString::number((uint32_t) st));
+    if(ioTape == nullptr) {
+        ui->label_state->setText(QString::number((uint32_t) st));
+    } else {
+        const char * s = ioTape->StatusString((int) st);
+        ui->label_state->setText(QString(s) + "(" + QString::number((uint32_t) st) + ")");
+    }
 }
 
 void MainWindow::error_message(QString message) {

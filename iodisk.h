@@ -157,6 +157,8 @@ protected:
                     timer.start();
 
                     res = ioTape->Write(buff, n, afp);
+                    if(filesToWrite.isEmpty())
+                        ioTape->paused = false;
                     timers_ms[4] += timer.nsecsElapsed();
                     timer.start();
 

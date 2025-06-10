@@ -157,41 +157,35 @@ protected:
                 }
             } else if(state == TAPE_WRITE) {
                 if(_remaining_bytes > 0) {
-                    if(!qWrite.isEmpty()) {
+                    if(qWrite.isEmpty()) {
+                        paused = true;
+                    } else if(!paused) {
                         Chunk_t c = qWrite.dequeue();
-                        if(_cmd_abort == cmd_abort) {
-                            if(_io_write_blocking(c.data, c.len)) {
-                                state = TAPE_ERROR;
-                                emit error_signal(QString::number(mediaPositionBytes / mediaInfo.BlockSize) + " Tape writing error");
-                            } else {
-                                mediaPositionBytes += c.len;
-                                emit change_pos();
-                                qWriteTotalBytesGet += c.len;
-                                if(qWriteBytes < c.len) {
-                                    qWriteBytes = 0;
-                                } else {
-                                    qWriteBytes -= c.len;
-                                }
-                                emit change_cache(qWriteBytes);
-                                if(_remaining_bytes <= c.len) {
-                                    _remaining_bytes = 0;
-                                } else {
-                                    _remaining_bytes -= c.len;
-                                }
-                                emit progress((double)(_total_bytes - _remaining_bytes) / _total_bytes * 100, c.afp, _total_bytes - _remaining_bytes);
-                            }
-//                        emit log(0, QString("free %1").arg((uint64_t) c.data, 16, 16, QChar('0')));
+                        if(_io_write_blocking(c.data, c.len)) {
+                            state = TAPE_ERROR;
+                            emit error_signal(QString::number(mediaPositionBytes / mediaInfo.BlockSize) + " Tape writing error");
                         } else {
-                            _cmd_abort = cmd_abort;
-                            command.clear();
-                            emit progress((double)(_total_bytes - _remaining_bytes) / _total_bytes * 100, "write aborted", _total_bytes - _remaining_bytes, true);
-                            emit change_pos(true);
-                            state = TAPE_IDLE;
+                            mediaPositionBytes += c.len;
+                            emit change_pos();
+                            qWriteTotalBytesGet += c.len;
+                            if(qWriteBytes < c.len) {
+                                qWriteBytes = 0;
+                            } else {
+                                qWriteBytes -= c.len;
+                            }
+                            emit change_cache(qWriteBytes);
+                            if(_remaining_bytes <= c.len) {
+                                _remaining_bytes = 0;
+                            } else {
+                                _remaining_bytes -= c.len;
+                            }
+                            emit progress((double)(_total_bytes - _remaining_bytes) / _total_bytes * 100, c.afp, _total_bytes - _remaining_bytes);
                         }
                         free(c.data);
                     }
                 } else {
                     iTotal++;
+                    paused = true;
                     emit progress(100, "OK", 0, true);
                     emit change_pos(true);
                     state = TAPE_IDLE;
@@ -269,9 +263,40 @@ public:
         command.enqueue(c);
     }
 
+    static const char * StatusString(int status) {
+        typedef struct {
+            int n;
+            const char * s;
+        } _t;
+        static const _t t[] = {
+            {1102L, "ERROR_BEGINNING_OF_MEDIA"},
+            {1111L, "ERROR_BUS_RESET"},
+            {1107L, "ERROR_DEVICE_NOT_PARTITIONED"},
+            {1165L, "ERROR_DEVICE_REQUIRES_CLEANING"},
+            {1100L, "ERROR_END_OF_MEDIA"},
+            {1101L, "ERROR_FILEMARK_DETECTED"},
+            {1106L, "ERROR_INVALID_BLOCK_LENGTH"},
+            {1110L, "ERROR_MEDIA_CHANGED"},
+            {1104L, "ERROR_NO_DATA_DETECTED"},
+            {1112L, "ERROR_NO_MEDIA_IN_DRIVE"},
+            {50L, "ERROR_NOT_SUPPORTED"},
+            {1105L, "ERROR_PARTITION_FAILURE"},
+            {1103L, "ERROR_SETMARK_DETECTED"},
+            {1108L, "ERROR_UNABLE_TO_LOCK_MEDIA"},
+            {1109L, "ERROR_UNABLE_TO_UNLOAD_MEDIA"},
+            {19L, "ERROR_WRITE_PROTECT"},
+        };
+        for(size_t i = 0; i < sizeof(t) / sizeof(t[0]); i++) {
+            if(status == t[i].n)
+                return t[i].s;
+        }
+        return "";
+    }
+
     int Write(void * data, uint32_t len, QString afp) {
         uint32_t writeCacheSize = qWriteTotalBytesPut - qWriteTotalBytesGet;
         if((uint64_t) writeCacheSize + len > (uint64_t) writeCacheSizeMax) {
+            paused = false;
             return 1;
         }
         Chunk_t c;
@@ -331,6 +356,7 @@ public:
     TAPE_GET_DRIVE_PARAMETERS driveInfo;
     uint64_t mediaPositionBytes = 0;
     TapeCatalog * tapeCatalog = nullptr;
+    bool paused = true;
 
     uint64_t GetPosition(void) {
 #ifdef  TAPE_EMULATION_FILE
