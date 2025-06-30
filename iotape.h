@@ -24,14 +24,16 @@ protected:
 
 //            emit progress1(100, clock()/*, "hello!"*/);
 
-            DWORD st = GetTapeStatus(hTape);
-            if(st != tapeStatus) {
-                emit status(st);
-                tapeStatus = st;
-            }
-            if(tapeStatus != 0) {
-                usleep(50000UL);
-                continue;
+            if(!nullTape && hTape != INVALID_HANDLE_VALUE) {
+                quint32 st = GetTapeStatus(hTape);
+                if(st != tapeStatus) {
+                    emit status(st);
+                    tapeStatus = st;
+                }
+                if(tapeStatus != 0) {
+                    usleep(50000UL);
+                    continue;
+                }
             }
             if(_cmd_abort != cmd_abort) {
                 _cmd_abort = cmd_abort;
@@ -52,7 +54,7 @@ protected:
                         emit progress(0, "seeking", 0, true);
                         _io_seek_blocking(c.arg);
                         iTotal++;
-                        emit progress(100, "OK", 0);
+                        emit progress(100, "OK", 0, true);
                         state = TAPE_IDLE;
                         break;
                     case CMD_READ:
@@ -294,15 +296,17 @@ public:
     }
 
     int Write(void * data, uint32_t len, QString afp) {
-        uint32_t writeCacheSize = qWriteTotalBytesPut - qWriteTotalBytesGet;
-        if((uint64_t) writeCacheSize + len > (uint64_t) writeCacheSizeMax) {
+        quint64 writeCacheSize = qWriteTotalBytesPut - qWriteTotalBytesGet;
+//        emit log(0, QString("Write ") + QString::number(writeCacheSize) + ", " + QString::number(len) + "(" + QString::number(writeCacheSizeMax) + ")");
+        if((quint64) writeCacheSize + len > (quint64) writeCacheSizeMax) {
             paused = false;
             return 1;
         }
         Chunk_t c;
         c.data = malloc(len);
-//        emit log(0, QString("malloc %1").arg((uint64_t) c.data, 16, 16, QChar('0')));
         if(c.data == nullptr) {
+//            emit log(0, QString("!malloc at ").arg(qWriteBytes, 15, 10, QChar('0')));
+            paused = false;
             return -1;
         }
         c.len = len;
@@ -350,7 +354,7 @@ public:
     }
 
     uint32_t max_chunk_len = 4 * 1024 * 1024;
-    uint32_t writeCacheSizeMax = 256 * 1024 * 1024;
+    quint64 writeCacheSizeMax = 256ULL * 1024ULL * 1024ULL;
 
     TAPE_GET_MEDIA_PARAMETERS mediaInfo;
     TAPE_GET_DRIVE_PARAMETERS driveInfo;
@@ -382,12 +386,13 @@ signals:
     void error_signal(QString message);
     void change_cache(quint64 size);
     void log(int level, QString message);
-    void status(DWORD tapeStatus);
+    void status(quint32 tapeStatus);
+    void DriveInfoUpdateSignal(void);
 
 private:
     HANDLE hTape = INVALID_HANDLE_VALUE;
     bool nullTape = false;
-    DWORD tapeStatus = 99999999UL;
+    quint32 tapeStatus = 99999999UL;
 
     typedef struct {
         void * data;
@@ -397,12 +402,12 @@ private:
     } Chunk_t;
 
     QAsyncQueue<Chunk_t> qRead;
-    uint64_t qReadBytes = 0;
+    quint64 qReadBytes = 0;
 
     QAsyncQueue<Chunk_t> qWrite;
-    uint64_t qWriteBytes = 0;
-    uint32_t qWriteTotalBytesPut = 0;
-    uint32_t qWriteTotalBytesGet = 0;
+    quint64 qWriteBytes = 0;
+    quint64 qWriteTotalBytesPut = 0;
+    quint64 qWriteTotalBytesGet = 0;
 
     E_State state = TAPE_IDLE;
     int cmd_abort = 0;
@@ -432,6 +437,11 @@ private:
     uint64_t _remaining_bytes = 0;
     int iTotal = 0;
     int nTotal = 0;
+
+    int _getTapeDriveParameters(void);
+    int _getTapeMediaParameters(void);
+    int _setTapeDriveParameters(TAPE_SET_DRIVE_PARAMETERS * ptr);
+    int _setTapeMediaParameters(TAPE_SET_MEDIA_PARAMETERS * ptr);
 
 };
 

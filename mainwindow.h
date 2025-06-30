@@ -19,6 +19,17 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    static QString psize(uint64_t size) {
+        if(size >= 10ULL * 1024 * 1024 * 1024)
+            return QString::number(size / (1024 * 1024 * 1024)) + " GiB";
+        else if(size >= 10ULL * 1024 * 1024)
+            return QString::number(size / (1024 * 1024)) + " MiB";
+        else if(size >= 10ULL * 1024)
+            return QString::number(size / 1024) + " KiB";
+        else
+            return QString::number(size) + " B";
+    }
+
 public slots:
     void progress1(double percent, quint64 bytes/*, QString str*/);
     void progress(double percent, QString str, quint64 bytes, bool force = false);
@@ -30,7 +41,8 @@ public slots:
     void worker_writefilelist_AddFile(QString path, qint64 size);
     void worker_writefilelist_CatalogReady(qint64 total_size);
     void worker_writefilelist_Clear(void);
-    void tapeStatus(DWORD st);
+    void tapeStatus(quint32 st);
+    void DriveInfoUpdateSlot(void);
 
 private slots:
     void on_pushButtonWriteAddFile_clicked();
@@ -72,19 +84,8 @@ private:
     IOTape * ioTape = nullptr;
     IODisk * ioDisk = nullptr;
     Worker_WriteFileList * w_writeFileList = nullptr;
-//    QList<QFileInfo> filesToWrite;
     TapeCatalog * read_catalog = nullptr;
 
-    QString psize(uint64_t size) {
-        if(size > 3ULL * 1024 * 1024 * 1024)
-            return QString::number(size / (1024 * 1024 * 1024)) + " Gb";
-        else if(size > 3 * 1024 * 1024)
-            return QString::number(size / (1024 * 1024)) + " Mb";
-        else if(size > 3 * 1024)
-            return QString::number(size / 1024) + " kb";
-        else
-            return QString::number(size);
-    }
     void ui_refresh();
 };
 #endif // MAINWINDOW_H

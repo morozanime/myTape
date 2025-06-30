@@ -33,6 +33,7 @@ MainWindow::MainWindow(QWidget *parent)
     ioDisk = new IODisk(ioTape);
     w_writeFileList = new Worker_WriteFileList();
 
+    connect(ioTape, &IOTape::DriveInfoUpdateSignal, this, &MainWindow::DriveInfoUpdateSlot);
     connect(ioTape, &IOTape::catalog_readed, this, &MainWindow::catalog_readed);
     connect(ioTape, &IOTape::change_pos, this, &MainWindow::change_pos);
     connect(ioTape, &IOTape::error_signal, this, &MainWindow::error_message);
@@ -217,7 +218,7 @@ void MainWindow::progress(double percent, QString str, quint64 bytes, bool force
         eta_str += QString("%1").arg(timeRemaining % 60, 2, 10, QChar('0'));
     }
 
-    QString message = QString::number(bytes_per_second / 1024) + " kB/s " + QString("%1%").arg(percent, 6, 'f', 2, ' ') + eta_str + " " + str;
+    QString message = psize(bytes_per_second) + "/s " + QString("%1%").arg(percent, 6, 'f', 2, ' ') + eta_str + " " + str;
     ui->statusbar->showMessage(message);
 }
 
@@ -370,7 +371,7 @@ void MainWindow::change_pos(bool force) {
     }
 }
 
-void MainWindow::tapeStatus(DWORD st) {
+void MainWindow::tapeStatus(quint32 st) {
     if(ioTape == nullptr) {
         ui->label_state->setText(QString::number((uint32_t) st));
     } else {
@@ -416,6 +417,7 @@ void MainWindow::log(int level, QString message) {
     QFile f = QFile("__log__");
     if(f.open(QFile::Append)) {
         f.write((QString::number(level) + message).toLatin1().append('\n'));
+        f.flush();
         f.close();
     }
 }
@@ -465,4 +467,20 @@ void MainWindow::on_pushButtonWriteAbort_clicked()
 {
     ioDisk->Flush();
     ioTape->Abort();
+}
+
+void MainWindow::DriveInfoUpdateSlot(void) {
+    if(ioTape == nullptr)
+        return;
+    ui->lineEdit_DriveInfoECC->setText(QString::number(ioTape->driveInfo.ECC ? 1 : 0));
+    ui->lineEdit_DriveInfoCompression->setText(QString::number(ioTape->driveInfo.Compression ? 1 : 0));
+    ui->lineEdit_DriveInfoDataPadding->setText(QString::number(ioTape->driveInfo.DataPadding ? 1 : 0));
+    ui->lineEdit_DriveInfoReportSetmarks->setText(QString::number(ioTape->driveInfo.ReportSetmarks ? 1 : 0));
+    ui->label_DriveInfoDefaultBlockSize->setText(QString::number(ioTape->driveInfo.DefaultBlockSize));
+    ui->label_DriveInfoMaximumBlockSize->setText(QString::number(ioTape->driveInfo.MaximumBlockSize));
+    ui->label_DriveInfoMinimumBlockSize->setText(QString::number(ioTape->driveInfo.MinimumBlockSize));
+    ui->label_DriveInfoMaximumPartitionCount->setText(QString::number(ioTape->driveInfo.MaximumPartitionCount));
+    ui->label_DriveInfoFeaturesLow->setText(QString::number(ioTape->driveInfo.FeaturesLow, 16));
+    ui->label_DriveInfoFeaturesHigh->setText(QString::number(ioTape->driveInfo.FeaturesHigh, 16));
+    ui->lineEdit_DriveInfoEOTWarningZoneSize->setText(QString::number(ioTape->driveInfo.EOTWarningZoneSize));
 }

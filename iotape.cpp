@@ -15,6 +15,93 @@ static HANDLE _cfw(const char * s) {
 #endif  /*WIN64*/
 }
 
+int IOTape::_getTapeDriveParameters(void) {
+    int err = -1;
+    do {
+        emit log(0, "--- GET_TAPE_DRIVE_INFORMATION");
+        DWORD lpdwSize;
+        lpdwSize = sizeof(driveInfo);
+        DWORD driveInfoResult = GetTapeParameters(hTape, GET_TAPE_DRIVE_INFORMATION, &lpdwSize, &driveInfo);
+        if(driveInfoResult != NO_ERROR) {
+            tapeStatus = driveInfoResult;
+            emit status(tapeStatus);
+            emit log(0, "ERROR " + QString::number(tapeStatus));
+            break;
+        }
+        emit log(0, "ECC " + QString::number(driveInfo.ECC));
+        emit log(0, "Compression " + QString::number(driveInfo.Compression));
+        emit log(0, "DataPadding " + QString::number(driveInfo.DataPadding));
+        emit log(0, "ReportSetmarks " + QString::number(driveInfo.ReportSetmarks));
+        emit log(0, "DefaultBlockSize " + QString::number(driveInfo.DefaultBlockSize));
+        emit log(0, "MaximumBlockSize " + QString::number(driveInfo.MaximumBlockSize));
+        emit log(0, "MinimumBlockSize " + QString::number(driveInfo.MinimumBlockSize));
+        emit log(0, "MaximumPartitionCount " + QString::number(driveInfo.MaximumPartitionCount));
+        emit log(0, "FeaturesLow " + QString::number((quint64) driveInfo.FeaturesLow, 16));
+        emit log(0, "FeaturesHigh " + QString::number((quint64) driveInfo.FeaturesHigh, 16));
+        emit log(0, "EOTWarningZoneSize " + QString::number(driveInfo.EOTWarningZoneSize));
+
+        emit DriveInfoUpdateSignal();
+        err = 0;
+    } while(0);
+    return err;
+}
+
+int IOTape::_getTapeMediaParameters(void) {
+    int err = -1;
+    do {
+        emit log(0, "--- GET_TAPE_MEDIA_INFORMATION");
+        DWORD lpdwSize;
+        lpdwSize = sizeof(mediaInfo);
+        DWORD mediaInfoResult = GetTapeParameters(hTape, GET_TAPE_MEDIA_INFORMATION, &lpdwSize, &mediaInfo);
+        if(mediaInfoResult != NO_ERROR) {
+            tapeStatus = mediaInfoResult;
+            emit status(tapeStatus);
+            emit log(0, "ERROR " + QString::number(tapeStatus));
+            break;
+        }
+        emit log(0, "Capacity " + QString::number(mediaInfo.Capacity.QuadPart));
+        emit log(0, "Remaining " + QString::number(mediaInfo.Remaining.QuadPart));
+        emit log(0, "BlockSize " + QString::number(mediaInfo.BlockSize));
+        emit log(0, "PartitionCount " + QString::number(mediaInfo.PartitionCount));
+        emit log(0, "WriteProtected " + QString::number(mediaInfo.WriteProtected));
+
+        err = 0;
+    } while(0);
+    return err;
+}
+
+int IOTape::_setTapeDriveParameters(TAPE_SET_DRIVE_PARAMETERS * ptr){
+    int err = -1;
+    do {
+        emit log(0, "--- SET_TAPE_DRIVE_PARAMETERS");
+        DWORD result = SetTapeParameters(hTape, SET_TAPE_DRIVE_INFORMATION, ptr);
+        if(result != NO_ERROR) {
+            tapeStatus = result;
+            emit status(tapeStatus);
+            emit log(0, "ERROR " + QString::number(tapeStatus));
+            break;
+        }
+        err = 0;
+    } while(0);
+    return err;
+}
+
+int IOTape::_setTapeMediaParameters(TAPE_SET_MEDIA_PARAMETERS * ptr){
+    int err = -1;
+    do {
+        emit log(0, "--- SET_TAPE_MEDIA_PARAMETERS");
+        DWORD result = SetTapeParameters(hTape, SET_TAPE_MEDIA_INFORMATION, ptr);
+        if(result != NO_ERROR) {
+            tapeStatus = result;
+            emit status(tapeStatus);
+            emit log(0, "ERROR " + QString::number(tapeStatus));
+            break;
+        }
+        err = 0;
+    } while(0);
+    return err;
+}
+
 int IOTape::Open(const char * device, int buffLen) {
     int err = -1;
     Close();
@@ -23,26 +110,31 @@ int IOTape::Open(const char * device, int buffLen) {
     do {
         if(buffLen < 1)
             buffLen = 1;
-        writeCacheSizeMax = buffLen * 1024 * 1024;
+        writeCacheSizeMax = (quint64) buffLen * 1024ULL * 1024ULL;
+        emit log(0, "--- Open '" + QString(device) + "'");
         if(strcmp(device, "\\\\.\\null")) {
             nullTape = false;
             hTape = _cfw(device);
-            if(hTape == INVALID_HANDLE_VALUE){
+            if(hTape == INVALID_HANDLE_VALUE) {
                 emit log(0, "Open error:" + QString::number(GetLastError()));
                 break;
             }
 
-            DWORD lpdwSize;
-            lpdwSize = sizeof(driveInfo);
-            GetTapeParameters(hTape, GET_TAPE_DRIVE_INFORMATION, &lpdwSize, &driveInfo);
-            lpdwSize = sizeof(mediaInfo);
-            GetTapeParameters(hTape, GET_TAPE_MEDIA_INFORMATION, &lpdwSize, &mediaInfo);
+            if(_getTapeDriveParameters()) {
+                break;
+            }
+
+            if(_getTapeMediaParameters()) {
+                break;
+            }
 
             if(mediaInfo.BlockSize == 0) {
                 mediaInfo.BlockSize = driveInfo.DefaultBlockSize;
                 TAPE_SET_MEDIA_PARAMETERS mediaSet;
                 mediaSet.BlockSize = mediaInfo.BlockSize;
-                SetTapeParameters(hTape, SET_TAPE_MEDIA_INFORMATION, &mediaSet);
+                if(_setTapeMediaParameters(&mediaSet)) {
+                    break;
+                }
             }
 
             GetPosition();
@@ -51,6 +143,7 @@ int IOTape::Open(const char * device, int buffLen) {
 
         } else {
             nullTape = true;
+            hTape = INVALID_HANDLE_VALUE;
             mediaInfo.BlockSize = 512;
             mediaInfo.Capacity.HighPart = 256;
             mediaInfo.Capacity.LowPart = 0;
@@ -60,9 +153,17 @@ int IOTape::Open(const char * device, int buffLen) {
             mediaInfo.WriteProtected = false;
 
             mediaPositionBytes = 0;
+
+            tapeStatus = 0;
+            emit status(tapeStatus);
         }
         err = 0;
     } while(0);
+    if(err != 0) {
+        if(!nullTape) {
+            Close();
+        }
+    }
     return err;
 }
 

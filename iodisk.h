@@ -204,7 +204,7 @@ protected:
             delete rawFile;
             rawFile = nullptr;
         }
-}
+    }
 
     void run(void) {
         while(true) {
