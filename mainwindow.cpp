@@ -34,6 +34,7 @@ MainWindow::MainWindow(QWidget *parent)
     w_writeFileList = new Worker_WriteFileList();
 
     connect(ioTape, &IOTape::DriveInfoUpdateSignal, this, &MainWindow::DriveInfoUpdateSlot);
+    connect(ioTape, &IOTape::MediaInfoUpdateSignal, this, &MainWindow::MediaInfoUpdateSlot);
     connect(ioTape, &IOTape::catalog_readed, this, &MainWindow::catalog_readed);
     connect(ioTape, &IOTape::change_pos, this, &MainWindow::change_pos);
     connect(ioTape, &IOTape::error_signal, this, &MainWindow::error_message);
@@ -243,8 +244,10 @@ void MainWindow::ui_refresh()
         ui->pushButtonReadAbort->setEnabled(true);
         ui->pushButtonSeek->setEnabled(true);
         ui->pushButtonSeekFirstFree->setEnabled(true);
+        ui->pushButton_DriveWrite->setEnabled(true);
+        ui->pushButton_MediaWrite->setEnabled(true);
 
-        ui->labelRawBlockSize->setText(QString::number(ioTape->mediaInfo.BlockSize));
+//        ui->labelRawBlockSize->setText(QString::number(ioTape->mediaInfo.BlockSize));
         ui->labelRawRemaining->setText(QString::number(ioTape->mediaInfo.Remaining.QuadPart));
         ui->labelRawCapacity->setText(QString::number(ioTape->mediaInfo.Capacity.QuadPart));
         ui->labelRawPartitionCount->setText(QString::number(ioTape->mediaInfo.PartitionCount));
@@ -260,8 +263,10 @@ void MainWindow::ui_refresh()
         ui->pushButtonReadAbort->setEnabled(false);
         ui->pushButtonSeek->setEnabled(false);
         ui->pushButtonSeekFirstFree->setEnabled(false);
+        ui->pushButton_DriveWrite->setEnabled(false);
+        ui->pushButton_MediaWrite->setEnabled(false);
 
-        ui->labelRawBlockSize->setText("?");
+//        ui->labelRawBlockSize->setText("?");
         ui->labelRawRemaining->setText("?");
         ui->labelRawCapacity->setText("?");
         ui->labelRawPartitionCount->setText("?");
@@ -313,7 +318,7 @@ void MainWindow::on_pushButtonOpen_clicked()
 
 void MainWindow::on_pushButtonSeek_clicked()
 {
-    ioTape->Command(IOTape::CMD_SEEK, ui->lineEditSeek->text().toLong());
+    ioTape->Command(IOTape::CMD_SEEK, ui->lineEditSeek->text().toULongLong());
 }
 
 void MainWindow::on_pushButtonGetPos_clicked()
@@ -483,4 +488,36 @@ void MainWindow::DriveInfoUpdateSlot(void) {
     ui->label_DriveInfoFeaturesLow->setText(QString::number(ioTape->driveInfo.FeaturesLow, 16));
     ui->label_DriveInfoFeaturesHigh->setText(QString::number(ioTape->driveInfo.FeaturesHigh, 16));
     ui->lineEdit_DriveInfoEOTWarningZoneSize->setText(QString::number(ioTape->driveInfo.EOTWarningZoneSize));
+}
+
+void MainWindow::on_pushButton_DriveWrite_clicked()
+{
+    if(ioTape == nullptr || ioTape->nullTape)
+        return;
+    TAPE_SET_DRIVE_PARAMETERS   driveParams;
+    driveParams.ECC = ui->lineEdit_DriveInfoECC->text().toInt();
+    driveParams.Compression = ui->lineEdit_DriveInfoCompression->text().toInt();
+    driveParams.DataPadding = ui->lineEdit_DriveInfoDataPadding->text().toInt();
+    driveParams.ReportSetmarks = ui->lineEdit_DriveInfoReportSetmarks->text().toInt();
+    driveParams.EOTWarningZoneSize = ui->lineEdit_DriveInfoEOTWarningZoneSize->text().toULong();
+    ioTape->setTapeDriveParameters(&driveParams);
+}
+
+void MainWindow::MediaInfoUpdateSlot(void) {
+    if(ioTape == nullptr)
+        return;
+    ui->labelRawCapacity->setText(QString::number(ioTape->mediaInfo.Capacity.QuadPart));
+    ui->labelRawRemaining->setText(QString::number(ioTape->mediaInfo.Remaining.QuadPart));
+    ui->lineEdit_MediaBlockSize->setText(QString::number(ioTape->mediaInfo.BlockSize));
+    ui->labelRawPartitionCount->setText(QString::number(ioTape->mediaInfo.PartitionCount));
+    ui->labelRawWriteProtected->setText(QString::number(ioTape->mediaInfo.WriteProtected));
+}
+
+void MainWindow::on_pushButton_MediaWrite_clicked()
+{
+    if(ioTape == nullptr || ioTape->nullTape)
+        return;
+    TAPE_SET_MEDIA_PARAMETERS   mediaParams;
+    mediaParams.BlockSize = ui->lineEdit_MediaBlockSize->text().toInt();
+    ioTape->setTapeMediaParameters(&mediaParams);
 }

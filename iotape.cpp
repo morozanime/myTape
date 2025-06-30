@@ -65,12 +65,13 @@ int IOTape::_getTapeMediaParameters(void) {
         emit log(0, "PartitionCount " + QString::number(mediaInfo.PartitionCount));
         emit log(0, "WriteProtected " + QString::number(mediaInfo.WriteProtected));
 
+        emit MediaInfoUpdateSignal();
         err = 0;
     } while(0);
     return err;
 }
 
-int IOTape::_setTapeDriveParameters(TAPE_SET_DRIVE_PARAMETERS * ptr){
+int IOTape::setTapeDriveParameters(TAPE_SET_DRIVE_PARAMETERS * ptr){
     int err = -1;
     do {
         emit log(0, "--- SET_TAPE_DRIVE_PARAMETERS");
@@ -86,7 +87,7 @@ int IOTape::_setTapeDriveParameters(TAPE_SET_DRIVE_PARAMETERS * ptr){
     return err;
 }
 
-int IOTape::_setTapeMediaParameters(TAPE_SET_MEDIA_PARAMETERS * ptr){
+int IOTape::setTapeMediaParameters(TAPE_SET_MEDIA_PARAMETERS * ptr){
     int err = -1;
     do {
         emit log(0, "--- SET_TAPE_MEDIA_PARAMETERS");
@@ -132,7 +133,10 @@ int IOTape::Open(const char * device, int buffLen) {
                 mediaInfo.BlockSize = driveInfo.DefaultBlockSize;
                 TAPE_SET_MEDIA_PARAMETERS mediaSet;
                 mediaSet.BlockSize = mediaInfo.BlockSize;
-                if(_setTapeMediaParameters(&mediaSet)) {
+                if(setTapeMediaParameters(&mediaSet)) {
+                    break;
+                }
+                if(_getTapeMediaParameters()) {
                     break;
                 }
             }
@@ -226,7 +230,7 @@ int IOTape::_io_seek_blocking(uint64_t pos) {
 #else   /*TAPE_EMULATION_FILE*/
     if(!nullTape) {
         DWORD dwOffsetLow = (DWORD) pos;
-        DWORD dwOffsetHigh = (DWORD) (pos >> 32);
+        DWORD dwOffsetHigh = (DWORD) (pos >> 32ULL);
 
         DWORD result = SetTapePosition(hTape, TAPE_ABSOLUTE_BLOCK, 0, dwOffsetLow, dwOffsetHigh, FALSE);
         if(result != NO_ERROR) {

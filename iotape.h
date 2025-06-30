@@ -377,6 +377,10 @@ public:
         return mediaPositionBytes;
     }
 
+    int setTapeDriveParameters(TAPE_SET_DRIVE_PARAMETERS * ptr);
+    int setTapeMediaParameters(TAPE_SET_MEDIA_PARAMETERS * ptr);
+    bool nullTape = false;
+
 signals:
     void progress1(double percent, quint64 bytes/*, QString str*/);
     /* если в параметрах есть uint64_t, то сигнал не доходит при вызове из другого потока. qt 5.14.2*/
@@ -388,10 +392,10 @@ signals:
     void log(int level, QString message);
     void status(quint32 tapeStatus);
     void DriveInfoUpdateSignal(void);
+    void MediaInfoUpdateSignal(void);
 
 private:
     HANDLE hTape = INVALID_HANDLE_VALUE;
-    bool nullTape = false;
     quint32 tapeStatus = 99999999UL;
 
     typedef struct {
@@ -440,8 +444,6 @@ private:
 
     int _getTapeDriveParameters(void);
     int _getTapeMediaParameters(void);
-    int _setTapeDriveParameters(TAPE_SET_DRIVE_PARAMETERS * ptr);
-    int _setTapeMediaParameters(TAPE_SET_MEDIA_PARAMETERS * ptr);
 
 };
 

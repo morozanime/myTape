@@ -43,6 +43,7 @@ public slots:
     void worker_writefilelist_Clear(void);
     void tapeStatus(quint32 st);
     void DriveInfoUpdateSlot(void);
+    void MediaInfoUpdateSlot(void);
 
 private slots:
     void on_pushButtonWriteAddFile_clicked();
@@ -77,6 +78,10 @@ private slots:
     void on_pushButtonReadAbort_clicked();
 
     void on_pushButtonRestore_clicked();
+
+    void on_pushButton_DriveWrite_clicked();
+
+    void on_pushButton_MediaWrite_clicked();
 
 private:
     Ui::MainWindow *ui;
