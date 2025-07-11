@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>myTape 0.4</string>
+   <string>myTape 0.5</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout">
@@ -236,7 +236,7 @@
     <item>
      <widget class="QTabWidget" name="tabWidget">
       <property name="currentIndex">
-       <number>1</number>
+       <number>2</number>
       </property>
       <widget class="QWidget" name="tabRead">
        <attribute name="title">
@@ -461,6 +461,9 @@
        </layout>
       </widget>
       <widget class="QWidget" name="tabMedia">
+       <property name="enabled">
+        <bool>true</bool>
+       </property>
        <attribute name="title">
         <string>Media</string>
        </attribute>
@@ -852,6 +855,13 @@
              </size>
             </property>
            </spacer>
+          </item>
+          <item>
+           <widget class="QPushButton" name="pushButton_MediaErase">
+            <property name="text">
+             <string>Erase</string>
+            </property>
+           </widget>
           </item>
          </layout>
         </item>
@@ -1627,7 +1637,7 @@
           <item>
            <widget class="QPushButton" name="pushButton_DriveWrite">
             <property name="text">
-             <string>Write</string>
+             <string>Set</string>
             </property>
            </widget>
           </item>

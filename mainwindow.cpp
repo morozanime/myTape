@@ -227,6 +227,9 @@ void MainWindow::ui_refresh()
 {
     if(ioTape->isOpened()) {
         ui->pushButtonOpen->setText("Close");
+        ui->tabDrive->setEnabled(true);
+        ui->tabMedia->setEnabled(true);
+
         ui->labelBlock->setText(psize(ioTape->mediaInfo.BlockSize));
         change_pos(true);
         if(ioTape->mediaInfo.Capacity.QuadPart > 0) {
@@ -234,15 +237,12 @@ void MainWindow::ui_refresh()
         }
 
         ui->pushButtonScan->setEnabled(true);
-        ui->pushButtonGetPos->setEnabled(true);
 
         if(ioTape->mediaPositionBytes < (uint64_t) ioTape->mediaInfo.Capacity.QuadPart - (uint64_t) ioTape->mediaInfo.Remaining.QuadPart) {
             ui->pushButtonNext->setEnabled(true);
         }
 
-        ui->pushButtonRead->setEnabled(true);
         ui->pushButtonReadAbort->setEnabled(true);
-        ui->pushButtonSeek->setEnabled(true);
         ui->pushButtonSeekFirstFree->setEnabled(true);
         ui->pushButton_DriveWrite->setEnabled(true);
         ui->pushButton_MediaWrite->setEnabled(true);
@@ -256,12 +256,12 @@ void MainWindow::ui_refresh()
     } else {
         ui->pushButtonOpen->setText("Open");
 
+        ui->tabDrive->setEnabled(false);
+        ui->tabMedia->setEnabled(false);
+
         ui->pushButtonScan->setEnabled(false);
-        ui->pushButtonGetPos->setEnabled(false);
         ui->pushButtonNext->setEnabled(false);
-        ui->pushButtonRead->setEnabled(false);
         ui->pushButtonReadAbort->setEnabled(false);
-        ui->pushButtonSeek->setEnabled(false);
         ui->pushButtonSeekFirstFree->setEnabled(false);
         ui->pushButton_DriveWrite->setEnabled(false);
         ui->pushButton_MediaWrite->setEnabled(false);
@@ -421,7 +421,9 @@ void MainWindow::on_pushButtonRestoreAll_clicked()
 void MainWindow::log(int level, QString message) {
     QFile f = QFile("__log__");
     if(f.open(QFile::Append)) {
-        f.write((QString::number(level) + message).toLatin1().append('\n'));
+        QDateTime dt = QDateTime::currentDateTime();
+        QString s = dt.toString("yyyy-MM-dd hh:mm:ss.zzz");
+        f.write((QString::number(level) + ": " + s + " " + message).toLatin1().append('\n'));
         f.flush();
         f.close();
     }
@@ -520,4 +522,12 @@ void MainWindow::on_pushButton_MediaWrite_clicked()
     TAPE_SET_MEDIA_PARAMETERS   mediaParams;
     mediaParams.BlockSize = ui->lineEdit_MediaBlockSize->text().toInt();
     ioTape->setTapeMediaParameters(&mediaParams);
+}
+
+void MainWindow::on_pushButton_MediaErase_clicked()
+{
+    if(ioTape == nullptr || ioTape->nullTape)
+        return;
+    ioTape->Command(IOTape::CMD_SEEK, 0);
+    ioTape->Command(IOTape::CMD_ERASE);
 }

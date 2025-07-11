@@ -141,7 +141,7 @@ int IOTape::Open(const char * device, int buffLen) {
                 }
             }
 
-            GetPosition();
+            GetPosition(&mediaPositionBytes);
             tapeStatus = GetTapeStatus(hTape);
             emit status(tapeStatus);
 

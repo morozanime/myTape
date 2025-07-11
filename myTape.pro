@@ -9,20 +9,24 @@ CONFIG += c++17
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
+    backbuffer.cpp \
     iodisk.cpp \
     iotape.cpp \
     main.cpp \
     mainwindow.cpp \
     myqbytearray.cpp \
+    tapeErase.cpp \
     tapecatalog.cpp \
     worker_writefilelist.cpp
 
 HEADERS += \
     ASYNC_queue.h \
+    backbuffer.h \
     iodisk.h \
     iotape.h \
     mainwindow.h \
     myqbytearray.h \
+    tapeErase.h \
     tapecatalog.h \
     worker_writefilelist.h
 

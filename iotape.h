@@ -5,6 +5,8 @@
 #include "ASYNC_queue.h"
 #include <qt_windows.h>
 #include "tapecatalog.h"
+#include "backbuffer.h"
+#include "tapeErase.h"
 
 //#define TAPE_EMULATION_FILE "$tmp$.tape"
 
@@ -78,10 +80,21 @@ protected:
                         state = TAPE_SCAN;
                         break;
                     case CMD_GETPOS:
-                        GetPosition();
+                        GetPosition(&mediaPositionBytes);
                         iTotal++;
                         emit change_pos(true);
                         emit progress(100, "pos", 0, true);
+                        break;
+                    case CMD_ERASE:{
+                        emit progress(0, "erase", 0, true);
+                        if(tapeErase(hTape, false)) {
+                            emit progress(0, "erase OK", 0, true);
+                        } else {
+                            emit progress(0, "erase ERROR", 0, true);
+                            emit status(GetLastError());
+                        }
+
+                    }
                         break;
                     }
                 } else {
@@ -103,6 +116,7 @@ protected:
                     if(_io_read_blocking(c.data, c.len)) {
                         free(c.data);
                         state = TAPE_ERROR;
+                        emit log(1, QString::number(mediaPositionBytes) + " Tape loading error");
                         emit error_signal(QString::number(mediaPositionBytes) + " Tape loading error");
                         usleep(50000);
                         continue;
@@ -160,33 +174,97 @@ protected:
             } else if(state == TAPE_WRITE) {
                 if(_remaining_bytes > 0) {
                     if(qWrite.isEmpty()) {
+                        if(!paused) {
+                            emit log(0, "Cache is empty. Stop write.");
+                        }
                         paused = true;
                     } else if(!paused) {
                         Chunk_t c = qWrite.dequeue();
-                        if(_io_write_blocking(c.data, c.len)) {
-                            state = TAPE_ERROR;
-                            emit error_signal(QString::number(mediaPositionBytes / mediaInfo.BlockSize) + " Tape writing error");
-                        } else {
-                            mediaPositionBytes += c.len;
-                            emit change_pos();
-                            qWriteTotalBytesGet += c.len;
-                            if(qWriteBytes < c.len) {
-                                qWriteBytes = 0;
+                        bb->put(c.data, c.len);
+                        int retry = 0;
+                        while(1) {
+                            if(_io_write_blocking(c.data, c.len) == 0) {
+                                mediaPositionBytes += c.len;
+                                emit change_pos();
+                                qWriteTotalBytesGet += c.len;
+                                if(qWriteBytes < c.len) {
+                                    qWriteBytes = 0;
+                                } else {
+                                    qWriteBytes -= c.len;
+                                }
+                                emit change_cache(qWriteBytes);
+                                if(_remaining_bytes <= c.len) {
+                                    _remaining_bytes = 0;
+                                } else {
+                                    _remaining_bytes -= c.len;
+                                }
+                                emit progress((double)(_total_bytes - _remaining_bytes) / _total_bytes * 100, c.afp, _total_bytes - _remaining_bytes);
+                                break;
                             } else {
-                                qWriteBytes -= c.len;
+                                QString errMess = "Tape writing error at " + QString::number(mediaPositionBytes) + " bytes. Error " + QString::number(GetLastError());
+                                emit log(1, errMess);
+label_00:
+                                if(++retry < 10) {
+                                    unsigned long tsleep = 30;
+                                    emit log(1, "Pause " + QString::number(tsleep) + " s");
+                                    sleep(tsleep);
+                                    quint64 pos = 0;
+                                    quint32 res = GetPosition(&pos);
+                                    if(res) {
+                                        emit log(1, "GetPosition failed " + QString::number(res) + " Aborting.");
+                                        state = TAPE_ERROR;
+                                        emit status(res);
+                                        emit error_signal(errMess);
+                                        break;
+                                    }
+                                    emit log(1, "GetPosition " + QString::number(pos));
+                                    if(pos == mediaPositionBytes) {
+                                        emit log(1, "Pos at begin of current chunk. Try again.");
+                                    } else if(pos > mediaPositionBytes && pos - mediaPositionBytes < c.len) {
+                                        emit log(1, "pos in current chunk. Repos to begin and try again.");
+                                        if(_io_seek_blocking(mediaPositionBytes)) {
+                                            emit log(1, "Seek Error");
+                                            goto label_00;
+                                        } else {
+                                            goto label_00;
+                                        }
+                                    } else if(pos < mediaPositionBytes && mediaPositionBytes - pos < bb->len() - c.len) {
+                                        void * data1 = nullptr;
+                                        void * data2 = nullptr;
+                                        quint64 len1 = 0;
+                                        quint64 len12 = bb->get(&data1, &data2, &len1, bb->len() - c.len, c.len);
+                                        if(len12 > 0) {
+                                            emit log(1, "Write part 1 from back buffer " + QString::number(len1) + " bytes");
+                                            if(_io_write_blocking(data1, len1) == 0) {
+                                                emit log(1, "OK");
+                                                if(len12 > len1) {
+                                                    emit log(1, "Write part 2 from back buffer " + QString::number(len12 - len1) + " bytes");
+                                                    if(_io_write_blocking(data2, len12 - len1) == 0) {
+                                                        emit log(1, "OK");
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        goto label_00;
+                                    } else {
+                                        emit log(1, "Can't try again. Aborting");
+                                        state = TAPE_ERROR;
+                                        emit error_signal(errMess);
+                                        break;
+                                    }
+                                } else {
+                                    emit log(1, "Retry is out. Aborting");
+                                    state = TAPE_ERROR;
+                                    emit error_signal(errMess);
+                                    break;
+                                }
                             }
-                            emit change_cache(qWriteBytes);
-                            if(_remaining_bytes <= c.len) {
-                                _remaining_bytes = 0;
-                            } else {
-                                _remaining_bytes -= c.len;
-                            }
-                            emit progress((double)(_total_bytes - _remaining_bytes) / _total_bytes * 100, c.afp, _total_bytes - _remaining_bytes);
                         }
                         free(c.data);
                     }
                 } else {
                     iTotal++;
+                    emit log(0, "Tape writing complete. Stop write.");
                     paused = true;
                     emit progress(100, "OK", 0, true);
                     emit change_pos(true);
@@ -210,6 +288,7 @@ public:
         memset(&driveInfo, 0, sizeof(driveInfo));
         mediaPositionBytes = 0;
         nullTape = false;
+        bb = new backBuffer(16 * 1024 * 1024);
     }
 
     ~IOTape() {
@@ -222,13 +301,14 @@ public:
         if(tapeCatalog != nullptr) {
             delete tapeCatalog;
         }
+        delete bb;
     }
 
     int Open(const char * device, int buffLen = 0);
     void Close(void);
 
     typedef enum {
-        CMD_SEEK, CMD_READ, CMD_WRITE, CMD_SCAN, CMD_GETPOS,
+        CMD_SEEK, CMD_READ, CMD_WRITE, CMD_SCAN, CMD_GETPOS, CMD_ERASE,
     } E_Command;
 
     typedef enum {
@@ -295,10 +375,13 @@ public:
         return "";
     }
 
-    int Write(void * data, uint32_t len, QString afp) {
+    int Write(void * data, quint32 len, quint64 positionBytes, QString afp) {
         quint64 writeCacheSize = qWriteTotalBytesPut - qWriteTotalBytesGet;
 //        emit log(0, QString("Write ") + QString::number(writeCacheSize) + ", " + QString::number(len) + "(" + QString::number(writeCacheSizeMax) + ")");
         if((quint64) writeCacheSize + len > (quint64) writeCacheSizeMax) {
+            if(paused) {
+                emit log(0, "Cache is full. Start write.");
+            }
             paused = false;
             return 1;
         }
@@ -306,10 +389,14 @@ public:
         c.data = malloc(len);
         if(c.data == nullptr) {
 //            emit log(0, QString("!malloc at ").arg(qWriteBytes, 15, 10, QChar('0')));
+            if(paused) {
+                emit log(0, "Cache memory allocation failed. Start write.");
+            }
             paused = false;
             return -1;
         }
         c.len = len;
+        c.positionBytes = positionBytes;
         memcpy(c.data, data, c.len);
         c.afp = afp;
         qWrite.enqueue(c);
@@ -353,28 +440,30 @@ public:
         return (uint64_t)(size + mediaInfo.BlockSize - 1) & ~(uint64_t)(mediaInfo.BlockSize - 1);
     }
 
-    uint32_t max_chunk_len = 4 * 1024 * 1024;
+    quint64 max_chunk_len = 4 * 1024 * 1024;
     quint64 writeCacheSizeMax = 256ULL * 1024ULL * 1024ULL;
 
     TAPE_GET_MEDIA_PARAMETERS mediaInfo;
     TAPE_GET_DRIVE_PARAMETERS driveInfo;
-    uint64_t mediaPositionBytes = 0;
+    quint64 mediaPositionBytes = 0;
     TapeCatalog * tapeCatalog = nullptr;
     bool paused = true;
 
-    uint64_t GetPosition(void) {
+    uint32_t GetPosition(quint64 * pos) {
+        uint32_t res = 0xFFFF;
 #ifdef  TAPE_EMULATION_FILE
 #else   /*TAPE_EMULATION_FILE*/
-        if(!nullTape) {
+        if(!nullTape && hTape != INVALID_HANDLE_VALUE) {
             DWORD dwPartition = 0;
             DWORD dwOffsetLow = 0;
             DWORD dwOffsetHigh = 0;
-            GetTapePosition(hTape, TAPE_ABSOLUTE_POSITION, &dwPartition, &dwOffsetLow, &dwOffsetHigh);
-
-            mediaPositionBytes = (((uint64_t) dwOffsetHigh << 32) | dwOffsetLow) * mediaInfo.BlockSize;
+            res = GetTapePosition(hTape, TAPE_ABSOLUTE_POSITION, &dwPartition, &dwOffsetLow, &dwOffsetHigh);
+            if(pos != nullptr) {
+                *pos = (((quint64) dwOffsetHigh << 32) | dwOffsetLow) * mediaInfo.BlockSize;
+            }
         }
 #endif  /*TAPE_EMULATION_FILE*/
-        return mediaPositionBytes;
+        return res;
     }
 
     int setTapeDriveParameters(TAPE_SET_DRIVE_PARAMETERS * ptr);
@@ -400,8 +489,8 @@ private:
 
     typedef struct {
         void * data;
-        uint32_t len;
-        uint64_t positionBytes;
+        quint32 len;
+        quint64 positionBytes;
         QString afp;
     } Chunk_t;
 
@@ -444,6 +533,7 @@ private:
 
     int _getTapeDriveParameters(void);
     int _getTapeMediaParameters(void);
+    backBuffer * bb;
 
 };
 

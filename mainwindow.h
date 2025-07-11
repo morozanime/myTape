@@ -83,6 +83,8 @@ private slots:
 
     void on_pushButton_MediaWrite_clicked();
 
+    void on_pushButton_MediaErase_clicked();
+
 private:
     Ui::MainWindow *ui;
 

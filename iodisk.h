@@ -136,9 +136,9 @@ protected:
             timers_ms[1] += timer.nsecsElapsed();
             timer.start();
 
-            qint64 fileSizeCounter = 0;
+            quint64 fileSizeCounter = 0;
             do {
-                uint64_t n0 = f.read((char*)buff, ioTape->max_chunk_len);
+                quint32 n0 = f.read((char*)buff, ioTape->max_chunk_len);
                 timers_ms[6] += n0;
 
                 timers_ms[2] += timer.nsecsElapsed();
@@ -146,8 +146,7 @@ protected:
 
                 if(n0 == 0)
                     break;
-                fileSizeCounter += n0;
-                uint64_t n = n0 + ioTape->mediaInfo.BlockSize - 1;
+                quint32 n = n0 + ioTape->mediaInfo.BlockSize - 1;
                 n &= ~(ioTape->mediaInfo.BlockSize - 1);
                 if(n > n0)
                     memset((uint8_t*)buff + n0, 0, n - n0);
@@ -156,9 +155,13 @@ protected:
                     timers_ms[3] += timer.nsecsElapsed();
                     timer.start();
 
-                    res = ioTape->Write(buff, n, afp);
-                    if(filesToWrite.isEmpty())
+                    res = ioTape->Write(buff, n, fileSizeCounter, afp);
+                    if(filesToWrite.isEmpty()) {
+                        if(ioTape->paused) {
+                            emit log(0, "Last file readed. Start write.");
+                        }
                         ioTape->paused = false;
+                    }
                     timers_ms[4] += timer.nsecsElapsed();
                     timer.start();
 
@@ -167,9 +170,10 @@ protected:
                     }
                     usleep(5000);
                 }
+                fileSizeCounter += n0;
             } while(!cmd_flush);
             f.close();
-            if(!cmd_flush && fileSizeCounter != info.size()) {
+            if(!cmd_flush && (qint64) fileSizeCounter != info.size()) {
                 cmd_flush = true;
                 emit error_signal(afp + " reading error at " + QString::number(fileSizeCounter) + "/" + QString::number(info.size()));
                 return;
