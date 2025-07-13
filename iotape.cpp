@@ -59,6 +59,10 @@ int IOTape::_getTapeMediaParameters(void) {
             emit log(0, "ERROR " + QString::number(tapeStatus));
             break;
         }
+        if(mediaInfo.Capacity.QuadPart == 0) {
+            mediaInfo.Capacity.QuadPart = mediaInfo.Remaining.QuadPart;
+        }
+
         emit log(0, "Capacity " + QString::number(mediaInfo.Capacity.QuadPart));
         emit log(0, "Remaining " + QString::number(mediaInfo.Remaining.QuadPart));
         emit log(0, "BlockSize " + QString::number(mediaInfo.BlockSize));
