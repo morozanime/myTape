@@ -1,8 +1,11 @@
 
+#if 0
 #include <windows.h>
 #include <winnt.h>
+#include <QMessageBox>
 //#include <ntddtape.h>
 #include "tapeErase.h"
+#include "mainwindow.h"
 
 #define IOCTL_TAPE_BASE                   FILE_DEVICE_TAPE
 
@@ -38,20 +41,76 @@ bool tapeErase(HANDLE hTape, bool type) {
         );
 }
 
-#define IOCTL_TAPE_EJECT_MEDIA  0x1f4808
+#define IOCTL_TAPE_EJECT_MEDIA      0x1f4808
+#define IOCTL_TAPE_MEDIA_REMOVAL    0x1f4804
 
 bool tapeEject(HANDLE hTape) {
     DWORD bytesReturned;
     OVERLAPPED Overlapped;
-    DWORD ioCtrl = IOCTL_TAPE_EJECT_MEDIA;
-    return DeviceIoControl(
-            hTape,                      // Handle to the tape device
-            ioCtrl,  //
-            NULL,                       // Input buffer
-            0,                          // Input buffer size
-            NULL,                       // Output buffer (not needed for this operation)
-            0,                          // Output buffer size
-            &bytesReturned,             // Bytes returned (not needed for this operation)
-            &Overlapped                 // Overlapped structure (not needed for this operation)
+    DWORD ioCtrl;
+    BOOL result = false;
+
+//    ioCtrl = IOCTL_TAPE_MEDIA_REMOVAL;
+//    PREVENT_MEDIA_REMOVAL pmr;
+//    pmr.PreventMediaRemoval = false;
+//    result = DeviceIoControl(
+//        hTape,             // handle to device
+//        ioCtrl,  // dwIoControlCode
+//        (LPVOID) &pmr,          // input buffer
+//        (DWORD) sizeof(pmr),        // size of input buffer
+//        NULL,                         // lpOutBuffer
+//        0,                            // nOutBufferSize
+//        &bytesReturned,    // number of bytes returned
+//        &Overlapped   // OVERLAPPED structure
+//    );
+
+    ioCtrl = IOCTL_TAPE_PREPARE;
+    TAPE_PREPARE prep;
+    prep.Immediate = false;
+    prep.Operation = TAPE_UNLOAD;
+    result = DeviceIoControl(
+        hTape,                      // Handle to the tape device
+        ioCtrl,  //
+        &prep,                      // Input buffer
+        sizeof(prep),                          // Input buffer size
+        NULL,                       // Output buffer (not needed for this operation)
+        0,                          // Output buffer size
+        &bytesReturned,             // Bytes returned (not needed for this operation)
+        &Overlapped                 // Overlapped structure (not needed for this operation)
         );
+
+    ioCtrl = IOCTL_TAPE_PREPARE;
+    prep.Immediate = false;
+    prep.Operation = TAPE_UNLOCK;
+    result = DeviceIoControl(
+        hTape,                      // Handle to the tape device
+        ioCtrl,  //
+        &prep,                      // Input buffer
+        sizeof(prep),                          // Input buffer size
+        NULL,                       // Output buffer (not needed for this operation)
+        0,                          // Output buffer size
+        &bytesReturned,             // Bytes returned (not needed for this operation)
+        &Overlapped                 // Overlapped structure (not needed for this operation)
+        );
+
+//    if(!result) {
+//        QMessageBox::critical(NULL, "IOCTL_TAPE_PREPARE", "error");
+//    }
+
+    ioCtrl = IOCTL_TAPE_EJECT_MEDIA;
+    result = DeviceIoControl(
+        hTape,                      // Handle to the tape device
+        ioCtrl,  //
+        NULL,                       // Input buffer
+        0,                          // Input buffer size
+        NULL,                       // Output buffer (not needed for this operation)
+        0,                          // Output buffer size
+        &bytesReturned,             // Bytes returned (not needed for this operation)
+        &Overlapped                 // Overlapped structure (not needed for this operation)
+        );
+//    if(!result) {
+//        QMessageBox::critical(NULL, "IOCTL_TAPE_EJECT_MEDIA", "error");
+//    }
+    return result;
 }
+#endif

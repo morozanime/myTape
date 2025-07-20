@@ -6,9 +6,30 @@
 #include <qt_windows.h>
 #include "tapecatalog.h"
 #include "backbuffer.h"
-#include "tapeErase.h"
+//#include "tapeErase.h"
+#include "lib.h"
 
 //#define TAPE_EMULATION_FILE "$tmp$.tape"
+
+#define IOCTL_TAPE_BASE                   FILE_DEVICE_TAPE
+
+#define IOCTL_TAPE_CHECK_VERIFY         CTL_CODE(IOCTL_TAPE_BASE, 0x0200, METHOD_BUFFERED, FILE_READ_ACCESS)
+#define IOCTL_TAPE_CREATE_PARTITION     CTL_CODE(IOCTL_TAPE_BASE, 0x000a, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
+#define IOCTL_TAPE_ERASE                CTL_CODE(IOCTL_TAPE_BASE, 0x0000, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
+#define IOCTL_TAPE_FIND_NEW_DEVICES     CTL_CODE(IOCTL_DISK_BASE, 0x0206, METHOD_BUFFERED, FILE_READ_ACCESS)
+#define IOCTL_TAPE_GET_DRIVE_PARAMS     CTL_CODE(IOCTL_TAPE_BASE, 0x0005, METHOD_BUFFERED, FILE_READ_ACCESS)
+#define IOCTL_TAPE_GET_MEDIA_PARAMS     CTL_CODE(IOCTL_TAPE_BASE, 0x0007, METHOD_BUFFERED, FILE_READ_ACCESS)
+#define IOCTL_TAPE_GET_POSITION         CTL_CODE(IOCTL_TAPE_BASE, 0x0003, METHOD_BUFFERED, FILE_READ_ACCESS)
+#define IOCTL_TAPE_GET_STATUS           CTL_CODE(IOCTL_TAPE_BASE, 0x0009, METHOD_BUFFERED, FILE_READ_ACCESS)
+
+#define IOCTL_TAPE_PREPARE              CTL_CODE(IOCTL_TAPE_BASE, 0x0001, METHOD_BUFFERED, FILE_READ_ACCESS)
+#define IOCTL_TAPE_SET_DRIVE_PARAMS     CTL_CODE(IOCTL_TAPE_BASE, 0x0006, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
+#define IOCTL_TAPE_SET_MEDIA_PARAMS     CTL_CODE(IOCTL_TAPE_BASE, 0x0008, METHOD_BUFFERED, FILE_READ_ACCESS)
+#define IOCTL_TAPE_SET_POSITION         CTL_CODE(IOCTL_TAPE_BASE, 0x0004, METHOD_BUFFERED, FILE_READ_ACCESS)
+#define IOCTL_TAPE_WRITE_MARKS          CTL_CODE(IOCTL_TAPE_BASE, 0x0002, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
+
+#define IOCTL_TAPE_EJECT_MEDIA      0x1f4808
+#define IOCTL_TAPE_MEDIA_REMOVAL    0x1f4804
 
 class IOTape : public QThread
 {
@@ -90,7 +111,7 @@ protected:
                         break;
                     case CMD_ERASE:{
                         emit progress(0, "erase", 0, true);
-                        if(tapeErase(hTape, false)) {
+                        if(Erase()) {
                             emit progress(0, "erase OK", 0, true);
                         } else {
                             emit progress(0, "erase ERROR", 0, true);
@@ -101,10 +122,10 @@ protected:
                         break;
                     case CMD_EJECT:{
                         emit progress(0, "eject", 0, true);
-                        if(tapeEject(hTape)) {
+                        if(Eject()) {
                             emit progress(0, "eject OK", 0, true);
                         } else {
-                            emit progress(0, "eject ERROR", 0, true);
+                            emit progress(0, "eject ERROR " + QString::number(GetLastError()), 0, true);
                             emit status(GetLastError());
                         }
                     }
@@ -152,7 +173,7 @@ protected:
                     c.len = mediaInfo.BlockSize;
                     c.data = malloc(c.len);
                     if(c.data == nullptr) {
-                        usleep(50000);
+                        msleep(50);
                         continue;
                     }
                     c.positionBytes = mediaPositionBytes;
@@ -161,7 +182,7 @@ protected:
                         free(c.data);
                         state = TAPE_ERROR;
                         emit error_signal(QString::number(mediaPositionBytes) + " Tape loading error");
-                        usleep(50000);
+                        msleep(50);
                         continue;
                     }
                     if(tapeCatalog->search(c.positionBytes, (const char*) c.data, c.len) >= 0) {
@@ -442,6 +463,99 @@ public:
         return 0;
     }
 
+    bool Erase(bool full = false) {
+        DWORD bytesReturned;
+        TAPE_ERASE tapeErase;
+        tapeErase.Type = full ? TAPE_ERASE_LONG : TAPE_ERASE_SHORT;
+        tapeErase.Immediate = false;
+        return DeviceIoControl(
+                hTape,                     // Handle to the tape device
+                IOCTL_TAPE_ERASE,            // Control code for tape erase
+                &tapeErase,                 // Input buffer (TAPE_ERASE structure)
+                sizeof(TAPE_ERASE),          // Input buffer size
+                NULL,                       // Output buffer (not needed for this operation)
+                0,                          // Output buffer size
+                &bytesReturned,             // Bytes returned (not needed for this operation)
+                NULL                        // Overlapped structure (not needed for this operation)
+            );
+    }
+
+    bool Eject(void) {
+        DWORD bytesReturned;
+        OVERLAPPED Overlapped;
+        DWORD ioCtrl;
+        BOOL result = false;
+
+    //    ioCtrl = IOCTL_TAPE_MEDIA_REMOVAL;
+    //    PREVENT_MEDIA_REMOVAL pmr;
+    //    pmr.PreventMediaRemoval = false;
+    //    result = DeviceIoControl(
+    //        hTape,             // handle to device
+    //        ioCtrl,  // dwIoControlCode
+    //        (LPVOID) &pmr,          // input buffer
+    //        (DWORD) sizeof(pmr),        // size of input buffer
+    //        NULL,                         // lpOutBuffer
+    //        0,                            // nOutBufferSize
+    //        &bytesReturned,    // number of bytes returned
+    //        &Overlapped   // OVERLAPPED structure
+    //    );
+
+        ioCtrl = IOCTL_TAPE_PREPARE;
+        TAPE_PREPARE prep;
+        prep.Immediate = false;
+        prep.Operation = TAPE_UNLOAD;
+        result = DeviceIoControl(
+            hTape,                      // Handle to the tape device
+            ioCtrl,  //
+            &prep,                      // Input buffer
+            sizeof(TAPE_PREPARE),                          // Input buffer size
+            NULL,                       // Output buffer (not needed for this operation)
+            0,                          // Output buffer size
+            &bytesReturned,             // Bytes returned (not needed for this operation)
+            &Overlapped                 // Overlapped structure (not needed for this operation)
+            );
+
+        msleep(100);
+        if(!result) {
+            emit error_signal("IOCTL_TAPE_PREPARE:TAPE_UNLOAD " + GetLastErrorAsString());
+        }
+
+        ioCtrl = IOCTL_TAPE_PREPARE;
+        prep.Immediate = false;
+        prep.Operation = TAPE_UNLOCK;
+        result = DeviceIoControl(
+            hTape,                      // Handle to the tape device
+            ioCtrl,  //
+            &prep,                      // Input buffer
+            sizeof(TAPE_PREPARE),                          // Input buffer size
+            NULL,                       // Output buffer (not needed for this operation)
+            0,                          // Output buffer size
+            &bytesReturned,             // Bytes returned (not needed for this operation)
+            &Overlapped                 // Overlapped structure (not needed for this operation)
+            );
+
+        msleep(100);
+        if(!result) {
+            emit error_signal("IOCTL_TAPE_PREPARE:TAPE_UNLOCK " + GetLastErrorAsString());
+        }
+
+        ioCtrl = IOCTL_TAPE_EJECT_MEDIA;
+        result = DeviceIoControl(
+            hTape,                      // Handle to the tape device
+            ioCtrl,  //
+            NULL,                       // Input buffer
+            0,                          // Input buffer size
+            NULL,                       // Output buffer (not needed for this operation)
+            0,                          // Output buffer size
+            &bytesReturned,             // Bytes returned (not needed for this operation)
+            &Overlapped                 // Overlapped structure (not needed for this operation)
+            );
+        if(!result) {
+            emit error_signal("IOCTL_TAPE_EJECT_MEDIA " + GetLastErrorAsString());
+        }
+        return result;
+    }
+
     bool isOpened(void) {
         if(nullTape) {
             return true;
@@ -450,16 +564,16 @@ public:
         }
     }
 
-    uint64_t RoundUp(uint64_t size) {
-//        uint64_t p = size / (uint64_t) mediaInfo.BlockSize;
-//        uint64_t q = size - p * (uint64_t) mediaInfo.BlockSize;
-//        if(q > 0) {
-//            return (p + 1) * (uint64_t) mediaInfo.BlockSize;
-//        } else {
-//            return size;
-//        }
-        return (uint64_t)(size + mediaInfo.BlockSize - 1) & ~(uint64_t)(mediaInfo.BlockSize - 1);
-    }
+//    uint64_t RoundUp(uint64_t size) {
+////        uint64_t p = size / (uint64_t) mediaInfo.BlockSize;
+////        uint64_t q = size - p * (uint64_t) mediaInfo.BlockSize;
+////        if(q > 0) {
+////            return (p + 1) * (uint64_t) mediaInfo.BlockSize;
+////        } else {
+////            return size;
+////        }
+//        return (uint64_t)(size + mediaInfo.BlockSize - 1) & ~(uint64_t)(mediaInfo.BlockSize - 1);
+//    }
 
     quint64 writeCacheSizeMax = 256ULL * 1024ULL * 1024ULL;
 

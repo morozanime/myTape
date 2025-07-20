@@ -34,6 +34,7 @@ protected:
         uint32_t n = 0;
         uint64_t buffStart = 0;
         if(ioTape->Read(buff, &n, &buffStart) != 0 || n == 0) {
+            msleep(5);
             return;
         }
         while(restoreFileIndex < restoreCatalog->filesOnTape.length()) {
@@ -314,7 +315,7 @@ public:
             catalog->filesOnTape[selected[i]].skip = false;
             if(f.fileSize > 0) {
                 ioTape->Command(IOTape::CMD_SEEK, f.offset);
-                ioTape->Command(IOTape::CMD_READ, ioTape->RoundUp(f.fileSize));
+                ioTape->Command(IOTape::CMD_READ, roundUp(f.fileSize, ioTape->mediaInfo.BlockSize));
             }
         }
     }
