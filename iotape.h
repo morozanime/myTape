@@ -62,6 +62,9 @@ protected:
                     case CMD_READ:
                         _total_bytes = c.arg;
                         _remaining_bytes = c.arg;
+                        if(qReadBytesChunk < mediaInfo.BlockSize) {
+                            qReadBytesChunk = mediaInfo.BlockSize;
+                        }
                         emit progress(0, "reading", _total_bytes - _remaining_bytes, true);
                         state = TAPE_READ;
                         break;
@@ -96,6 +99,16 @@ protected:
 
                     }
                         break;
+                    case CMD_EJECT:{
+                        emit progress(0, "eject", 0, true);
+                        if(tapeEject(hTape)) {
+                            emit progress(0, "eject OK", 0, true);
+                        } else {
+                            emit progress(0, "eject ERROR", 0, true);
+                            emit status(GetLastError());
+                        }
+                    }
+                        break;
                     }
                 } else {
                     usleep(50000);
@@ -106,10 +119,10 @@ protected:
                         continue;
                     }
                     Chunk_t c;
-                    c.len = (uint32_t)(_remaining_bytes > max_chunk_len ? max_chunk_len : _remaining_bytes);
+                    c.len = (quint32)(_remaining_bytes > qReadBytesChunk ? qReadBytesChunk : _remaining_bytes);
                     c.data = malloc(c.len);
                     if(c.data == nullptr) {
-                        usleep(5000);
+                        msleep(50);
                         continue;
                     }
                     c.positionBytes = mediaPositionBytes;
@@ -118,14 +131,14 @@ protected:
                         state = TAPE_ERROR;
                         emit log(1, QString::number(mediaPositionBytes) + " Tape loading error");
                         emit error_signal(QString::number(mediaPositionBytes) + " Tape loading error");
-                        usleep(50000);
+                        msleep(50);
                         continue;
                     }
                     qRead.enqueue(c);
                     mediaPositionBytes += c.len;
                     emit change_pos();
                     _remaining_bytes -= c.len;
-                    emit progress((double)(_total_bytes - _remaining_bytes) / _total_bytes * 100, "reading", _total_bytes - _remaining_bytes);
+                    emit progress((double)(_total_bytes - _remaining_bytes) / _total_bytes * 100, "reading " + c.afp, _total_bytes - _remaining_bytes);
                 } else {
                     iTotal++;
                     emit progress(100, "OK", 0, true);
@@ -136,7 +149,7 @@ protected:
             } else if(state == TAPE_SCAN) {
                 if(_cmd_abort == cmd_abort) {
                     Chunk_t c;
-                    c.len = max_chunk_len;
+                    c.len = mediaInfo.BlockSize;
                     c.data = malloc(c.len);
                     if(c.data == nullptr) {
                         usleep(50000);
@@ -157,11 +170,12 @@ protected:
                         state = TAPE_IDLE;
                         emit catalog_readed(tapeCatalog);
                         mediaPositionBytes += c.len;
+                        emit change_pos(true);
                     } else {
                         mediaPositionBytes += c.len;
                         emit progress((double) (mediaPositionBytes * 100) / mediaInfo.Capacity.QuadPart, "scan", mediaPositionBytes);
+                        emit change_pos();
                     }
-                    emit change_pos();
                     free(c.data);
                 } else {
                     _cmd_abort = cmd_abort;
@@ -308,7 +322,7 @@ public:
     void Close(void);
 
     typedef enum {
-        CMD_SEEK, CMD_READ, CMD_WRITE, CMD_SCAN, CMD_GETPOS, CMD_ERASE,
+        CMD_SEEK, CMD_READ, CMD_WRITE, CMD_SCAN, CMD_GETPOS, CMD_ERASE, CMD_EJECT,
     } E_Command;
 
     typedef enum {
@@ -437,10 +451,16 @@ public:
     }
 
     uint64_t RoundUp(uint64_t size) {
+//        uint64_t p = size / (uint64_t) mediaInfo.BlockSize;
+//        uint64_t q = size - p * (uint64_t) mediaInfo.BlockSize;
+//        if(q > 0) {
+//            return (p + 1) * (uint64_t) mediaInfo.BlockSize;
+//        } else {
+//            return size;
+//        }
         return (uint64_t)(size + mediaInfo.BlockSize - 1) & ~(uint64_t)(mediaInfo.BlockSize - 1);
     }
 
-    quint64 max_chunk_len = 4 * 1024 * 1024;
     quint64 writeCacheSizeMax = 256ULL * 1024ULL * 1024ULL;
 
     TAPE_GET_MEDIA_PARAMETERS mediaInfo;
@@ -496,6 +516,7 @@ private:
 
     QAsyncQueue<Chunk_t> qRead;
     quint64 qReadBytes = 0;
+    quint64 qReadBytesChunk = 4 * 1024 * 1024;
 
     QAsyncQueue<Chunk_t> qWrite;
     quint64 qWriteBytes = 0;
@@ -517,17 +538,17 @@ private:
 
     typedef struct {
         E_Command cmd;
-        uint64_t arg;
+        quint64 arg;
     } Command_t;
 
     QAsyncQueue<Command_t> command;
 
-    int _io_read_blocking(void * dest, uint32_t len);
-    int _io_write_blocking(void * src, uint32_t len);
-    int _io_seek_blocking(uint64_t pos);
+    int _io_read_blocking(void * dest, quint32 len);
+    int _io_write_blocking(void * src, quint32 len);
+    int _io_seek_blocking(quint64 pos);
 
-    uint64_t _total_bytes = 0;
-    uint64_t _remaining_bytes = 0;
+    quint64 _total_bytes = 0;
+    quint64 _remaining_bytes = 0;
     int iTotal = 0;
     int nTotal = 0;
 

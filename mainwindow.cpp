@@ -226,6 +226,7 @@ void MainWindow::progress(double percent, QString str, quint64 bytes, bool force
 void MainWindow::ui_refresh()
 {
     if(ioTape->isOpened()) {
+        ui->pushButton_Eject->setEnabled(true);
         ui->pushButtonOpen->setText("Close");
         ui->tabDrive->setEnabled(true);
         ui->tabMedia->setEnabled(true);
@@ -254,6 +255,7 @@ void MainWindow::ui_refresh()
         ui->labelRawWriteProtected->setText(ioTape->mediaInfo.WriteProtected ? "YES" : "NO");
         ui->lineEditCache->setEnabled(false);
     } else {
+        ui->pushButton_Eject->setEnabled(false);
         ui->pushButtonOpen->setText("Open");
 
         ui->tabDrive->setEnabled(false);
@@ -328,7 +330,7 @@ void MainWindow::on_pushButtonGetPos_clicked()
 
 void MainWindow::on_pushButtonRead_clicked()
 {
-    uint64_t toRead = (uint64_t) ui->lineEditRead->text().toLong() * ioTape->mediaInfo.BlockSize;
+    uint64_t toRead = (uint64_t) ui->lineEditRead->text().toULong() * ioTape->mediaInfo.BlockSize;
     if(toRead == 0)
         return;
     QString fn = QFileDialog::getSaveFileName(this, "Save " + QString::number(toRead) + " bytes to file");
@@ -490,6 +492,17 @@ void MainWindow::DriveInfoUpdateSlot(void) {
     ui->label_DriveInfoFeaturesLow->setText(QString::number(ioTape->driveInfo.FeaturesLow, 16));
     ui->label_DriveInfoFeaturesHigh->setText(QString::number(ioTape->driveInfo.FeaturesHigh, 16));
     ui->lineEdit_DriveInfoEOTWarningZoneSize->setText(QString::number(ioTape->driveInfo.EOTWarningZoneSize));
+
+
+    ui->comboBox_MediaBlockSize->clear();
+    quint32 bs = 1;
+    while(bs < ioTape->driveInfo.MinimumBlockSize) {
+        bs *= 2;
+    }
+    while(bs <= ioTape->driveInfo.MaximumBlockSize) {
+        ui->comboBox_MediaBlockSize->addItem(QString::number(bs));
+        bs *= 2;
+    }
 }
 
 void MainWindow::on_pushButton_DriveWrite_clicked()
@@ -513,6 +526,7 @@ void MainWindow::MediaInfoUpdateSlot(void) {
     ui->lineEdit_MediaBlockSize->setText(QString::number(ioTape->mediaInfo.BlockSize));
     ui->labelRawPartitionCount->setText(QString::number(ioTape->mediaInfo.PartitionCount));
     ui->labelRawWriteProtected->setText(QString::number(ioTape->mediaInfo.WriteProtected));
+    ui->labelBlock->setText(psize(ioTape->mediaInfo.BlockSize));
 }
 
 void MainWindow::on_pushButton_MediaWrite_clicked()
@@ -530,4 +544,21 @@ void MainWindow::on_pushButton_MediaErase_clicked()
         return;
     ioTape->Command(IOTape::CMD_SEEK, 0);
     ioTape->Command(IOTape::CMD_ERASE);
+}
+
+void MainWindow::on_comboBox_MediaBlockSize_currentIndexChanged(const QString &arg1)
+{
+    if(ioTape == nullptr)
+        return;
+    ioTape->mediaInfo.BlockSize = arg1.toULong();
+    ui->lineEdit_MediaBlockSize->setText(QString::number(ioTape->mediaInfo.BlockSize));
+}
+
+void MainWindow::on_pushButton_Eject_clicked()
+{
+    if(!ioTape->isOpened())
+        return;
+    if(ioTape->nullTape)
+        return;
+    ioTape->Command(IOTape::CMD_EJECT);
 }

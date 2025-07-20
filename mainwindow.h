@@ -85,6 +85,10 @@ private slots:
 
     void on_pushButton_MediaErase_clicked();
 
+    void on_comboBox_MediaBlockSize_currentIndexChanged(const QString &arg1);
+
+    void on_pushButton_Eject_clicked();
+
 private:
     Ui::MainWindow *ui;
 

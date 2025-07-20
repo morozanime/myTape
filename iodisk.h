@@ -7,6 +7,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include "iotape.h"
+#include "lib.h"
 
 class IODisk : public QThread
 {
@@ -24,13 +25,12 @@ protected:
             restoreCatalog = nullptr;
             return;
         }
-        if(buff == nullptr) {
-            buff = malloc(ioTape->max_chunk_len);
-            if(buff == nullptr) {
-                usleep(5000);
-                return;
-            }
+
+        if(!buffAlloc()) {
+            msleep(50);
+            return;
         }
+
         uint32_t n = 0;
         uint64_t buffStart = 0;
         if(ioTape->Read(buff, &n, &buffStart) != 0 || n == 0) {
@@ -105,16 +105,28 @@ protected:
         }
 }
 
+    bool buffAlloc(void) {
+        if(buff == nullptr || buffLen < ioTape->mediaInfo.BlockSize) {
+            if(buffLen < ioTape->mediaInfo.BlockSize) {
+                buffLen = ioTape->mediaInfo.BlockSize;
+            }
+            void * ptr = realloc(buff, buffLen);
+            if(ptr == nullptr) {
+                return false;
+            }
+            buff = ptr;
+        }
+        return true;
+    }
+
+
     inline void process_backup()
     {
         QElapsedTimer timer;
 
-        if(buff == nullptr) {
-            buff = malloc(ioTape->max_chunk_len);
-            if(buff == nullptr) {
-                usleep(5000);
-                return;
-            }
+        if(!buffAlloc()) {
+            msleep(50);
+            return;
         }
 
         timer.start();
@@ -138,24 +150,26 @@ protected:
 
             quint64 fileSizeCounter = 0;
             do {
-                quint32 n0 = f.read((char*)buff, ioTape->max_chunk_len);
-                timers_ms[6] += n0;
+                qint64 freadResult = f.read((char*)buff, ioTape->mediaInfo.BlockSize);
+                timers_ms[6] += freadResult;
 
                 timers_ms[2] += timer.nsecsElapsed();
                 timer.start();
 
-                if(n0 == 0)
+                if(freadResult <= 0) {
+                    emit log(0, "File '" + afp + "' len= " + QString::number(freadResult) + ", skipped.");
                     break;
-                quint32 n = n0 + ioTape->mediaInfo.BlockSize - 1;
-                n &= ~(ioTape->mediaInfo.BlockSize - 1);
-                if(n > n0)
-                    memset((uint8_t*)buff + n0, 0, n - n0);
+                }
+                quint64 bytesReaded = (quint64) freadResult;
+                quint64 bytesReadedRounded = roundUp(bytesReaded, ioTape->mediaInfo.BlockSize);
+                if(bytesReadedRounded > bytesReaded)
+                    memset((uint8_t*)buff + bytesReaded, 0, bytesReadedRounded - bytesReaded);
                 int res = 0;
                 while(!cmd_flush) {
                     timers_ms[3] += timer.nsecsElapsed();
                     timer.start();
 
-                    res = ioTape->Write(buff, n, fileSizeCounter, afp);
+                    res = ioTape->Write(buff, bytesReadedRounded, fileSizeCounter, afp);
                     if(filesToWrite.isEmpty()) {
                         if(ioTape->paused) {
                             emit log(0, "Last file readed. Start write.");
@@ -168,9 +182,9 @@ protected:
                     if(res == 0) {
                         break;
                     }
-                    usleep(5000);
+                    msleep(5);
                 }
-                fileSizeCounter += n0;
+                fileSizeCounter += bytesReaded;
             } while(!cmd_flush);
             f.close();
             if(!cmd_flush && (qint64) fileSizeCounter != info.size()) {
@@ -187,13 +201,11 @@ protected:
 
     inline void process_rawread()
     {
-        if(buff == nullptr) {
-            buff = malloc(ioTape->max_chunk_len);
-            if(buff == nullptr) {
-                usleep(5000);
-                return;
-            }
+        if(!buffAlloc()) {
+            msleep(50);
+            return;
         }
+
         uint32_t n = 0;
         if(ioTape->Read(buff, &n, nullptr) == 0 && n > 0) {
             uint64_t n1 = rawFile->write((const char*) buff, n);
@@ -317,6 +329,7 @@ private:
     IOTape * ioTape;
     QQueue<QFileInfo> filesToWrite;
     void * buff = nullptr;
+    quint64 buffLen = 8 * 1024 * 1024;
     bool cmd_flush = false;
 
     QFile * rawFile = nullptr;

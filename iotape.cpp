@@ -86,6 +86,7 @@ int IOTape::setTapeDriveParameters(TAPE_SET_DRIVE_PARAMETERS * ptr){
             emit log(0, "ERROR " + QString::number(tapeStatus));
             break;
         }
+        _getTapeDriveParameters();
         err = 0;
     } while(0);
     return err;
@@ -102,6 +103,7 @@ int IOTape::setTapeMediaParameters(TAPE_SET_MEDIA_PARAMETERS * ptr){
             emit log(0, "ERROR " + QString::number(tapeStatus));
             break;
         }
+        _getTapeMediaParameters();
         err = 0;
     } while(0);
     return err;
@@ -152,6 +154,11 @@ int IOTape::Open(const char * device, int buffLen) {
         } else {
             nullTape = true;
             hTape = INVALID_HANDLE_VALUE;
+
+            driveInfo.DefaultBlockSize = 512;
+            driveInfo.MinimumBlockSize = 256;
+            driveInfo.MaximumBlockSize = 8 * 1024 * 1024;
+
             mediaInfo.BlockSize = 512;
             mediaInfo.Capacity.HighPart = 256;
             mediaInfo.Capacity.LowPart = 0;
@@ -163,6 +170,9 @@ int IOTape::Open(const char * device, int buffLen) {
             mediaPositionBytes = 0;
 
             tapeStatus = 0;
+
+            emit DriveInfoUpdateSignal();
+            emit MediaInfoUpdateSignal();
             emit status(tapeStatus);
         }
         err = 0;
@@ -228,7 +238,7 @@ int IOTape::_io_write_blocking(void * src, uint32_t len) {
     return 0;
 }
 
-int IOTape::_io_seek_blocking(uint64_t pos) {
+int IOTape::_io_seek_blocking(quint64 pos) {
     pos /= this->mediaInfo.BlockSize;
 #ifdef  TAPE_EMULATION_FILE
 #else   /*TAPE_EMULATION_FILE*/

@@ -12,6 +12,7 @@ SOURCES += \
     backbuffer.cpp \
     iodisk.cpp \
     iotape.cpp \
+    lib.cpp \
     main.cpp \
     mainwindow.cpp \
     myqbytearray.cpp \
@@ -24,6 +25,7 @@ HEADERS += \
     backbuffer.h \
     iodisk.h \
     iotape.h \
+    lib.h \
     mainwindow.h \
     myqbytearray.h \
     tapeErase.h \

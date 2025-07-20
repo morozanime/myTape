@@ -37,3 +37,21 @@ bool tapeErase(HANDLE hTape, bool type) {
             NULL                        // Overlapped structure (not needed for this operation)
         );
 }
+
+#define IOCTL_TAPE_EJECT_MEDIA  0x1f4808
+
+bool tapeEject(HANDLE hTape) {
+    DWORD bytesReturned;
+    OVERLAPPED Overlapped;
+    DWORD ioCtrl = IOCTL_TAPE_EJECT_MEDIA;
+    return DeviceIoControl(
+            hTape,                      // Handle to the tape device
+            ioCtrl,  //
+            NULL,                       // Input buffer
+            0,                          // Input buffer size
+            NULL,                       // Output buffer (not needed for this operation)
+            0,                          // Output buffer size
+            &bytesReturned,             // Bytes returned (not needed for this operation)
+            &Overlapped                 // Overlapped structure (not needed for this operation)
+        );
+}

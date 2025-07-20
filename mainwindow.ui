@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>myTape 0.5</string>
+   <string>myTape 0.52</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout">
@@ -41,6 +41,16 @@
        <widget class="QPushButton" name="pushButtonOpen">
         <property name="text">
          <string>Open</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="pushButton_Eject">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="text">
+         <string>Eject</string>
         </property>
        </widget>
       </item>
@@ -713,6 +723,9 @@
              <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
             </property>
            </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="comboBox_MediaBlockSize"/>
           </item>
           <item>
            <widget class="QPushButton" name="pushButton_MediaWrite">
